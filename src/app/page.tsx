@@ -19,6 +19,7 @@ import { ActivityForm } from "@/components/forms/ActivityForm";
 import { WeightForm } from "@/components/forms/WeightForm";
 import { MealForm } from "@/components/forms/MealForm";
 import { AnalyzeMeal } from "@/components/forms/AnalyzeMeal";
+import { BottomNav } from "@/components/BottomNav";
 
 type SheetState =
   | { kind: "ai" }
@@ -289,7 +290,7 @@ export default function HomePage() {
   }
 
   return (
-    <main className="space-y-4">
+    <main className="space-y-4 pb-20">
       <header className="flex items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">שלום{profile.display_name ? `, ${profile.display_name}` : ""}</h1>
         <Link
@@ -435,6 +436,9 @@ export default function HomePage() {
             <h2 className="font-semibold">משקל אחרון</h2>
             <span className="font-bold tabular-nums">{weightKg === null ? "לא הוזן" : `${weightKg} ק"ג`}</span>
           </div>
+          <Link href="/weight" className="mt-2 inline-block text-sm font-semibold text-emerald-700 underline">
+            גרף, מגמה ותחזית
+          </Link>
         </Card>
 
         <Card>
@@ -470,6 +474,7 @@ export default function HomePage() {
           )}
         </Sheet>
       ) : null}
+      <BottomNav />
     </main>
   );
 }

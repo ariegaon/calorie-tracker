@@ -14,6 +14,7 @@ import {
   type ProfileRow,
 } from "@/lib/profile";
 import { validateProfile, type ProfileErrors, type ProfileForm } from "@/lib/validation/profile";
+import { BottomNav } from "@/components/BottomNav";
 import { Button, Card, Field, FullPageMessage, Notice, Select, TextInput } from "@/components/ui";
 
 export default function ProfilePage() {
@@ -94,7 +95,7 @@ export default function ProfilePage() {
   if (loadError) return <Notice kind="error">{loadError}</Notice>;
 
   return (
-    <main className="space-y-5">
+    <main className={isOnboarding ? "space-y-5" : "space-y-5 pb-20"}>
       <header className="space-y-1">
         <h1 className="text-2xl font-bold">{isOnboarding ? "בוא נכיר" : "פרופיל ויעדים"}</h1>
         <p className="text-sm text-slate-600">
@@ -271,6 +272,7 @@ export default function ProfilePage() {
         </Button>
         <p className="text-center text-xs text-slate-500">מחובר כ-{session?.user.email}</p>
       </div>
+      {!isOnboarding ? <BottomNav /> : null}
     </main>
   );
 }
