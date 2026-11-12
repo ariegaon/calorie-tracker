@@ -10,6 +10,7 @@ import type {
   FoodItemRow,
   FoodRow,
   FoodValues,
+  MealValues,
   WeightRow,
   WeightValues,
 } from "@/lib/day/entries";
@@ -76,7 +77,7 @@ export async function loadDay(userId: string, day: Date): Promise<LoadedDay> {
   if (foodRows.length > 0) {
     const result = await supabase
       .from("food_entry_items")
-      .select("id, food_entry_id, food_name, quantity, quantity_unit, calories_kcal, protein_g, carbs_g, fat_g")
+      .select("id, food_entry_id, food_name, quantity, quantity_unit, calories_kcal, protein_g, carbs_g, fat_g, confidence, source, user_corrected")
       .eq("user_id", userId)
       .in(
         "food_entry_id",
@@ -155,6 +156,92 @@ export async function saveFood(userId: string, values: FoodValues, existing: Foo
         .from("food_entry_items")
         .insert({ user_id: userId, food_entry_id: existing.id, ...foodItemColumns(values) });
   if (item.error) fail(item.error.message);
+}
+
+export type MealSaveOptions = {
+  /** Where a new meal came from. Ignored when editing an existing one. */
+  source: "manual" | "ai_photo" | "ai_text";
+  /** The model's original answer, stored untouched next to the user's corrected values. */
+  aiRawResult: unknown | null;
+  /** Per item, in order: the model's confidence (0 to 1) and whether the user changed the values. */
+  itemMeta: { confidence: number | null; fromAi: boolean; userCorrected: boolean }[];
+};
+
+/** Saves a meal made of several items. When editing, the item list is replaced as a whole. */
+export async function saveMeal(
+  userId: string,
+  values: MealValues,
+  existing: FoodRow | null,
+  options: MealSaveOptions,
+): Promise<void> {
+  const supabase = getSupabase();
+  const entryColumns = {
+    consumed_at: values.consumedAt,
+    name: values.name,
+    meal_type: values.mealType,
+    notes: values.notes,
+  };
+
+  const itemRows = (entryId: string) =>
+    values.items.map((item, index) => {
+      const meta = options.itemMeta[index];
+      return {
+        user_id: userId,
+        food_entry_id: entryId,
+        food_name: item.name,
+        quantity: item.quantityG,
+        quantity_unit: "g",
+        calories_kcal: item.caloriesKcal,
+        protein_g: item.proteinG,
+        carbs_g: item.carbsG,
+        fat_g: item.fatG,
+        confidence: meta?.confidence ?? null,
+        source: meta?.fromAi ? "ai_estimate" : "manual",
+        user_corrected: meta?.userCorrected ?? false,
+      };
+    });
+
+  if (!existing) {
+    const fromAi = options.source !== "manual";
+    const created = await supabase
+      .from("food_entries")
+      .insert({
+        user_id: userId,
+        source: options.source,
+        ai_analysis_status: fromAi ? "confirmed" : "none",
+        ai_raw_result: fromAi ? options.aiRawResult : null,
+        ...entryColumns,
+      })
+      .select("id")
+      .single();
+    if (created.error) fail(created.error.message);
+    const entryId = (created.data as unknown as { id: string }).id;
+
+    const inserted = await supabase.from("food_entry_items").insert(itemRows(entryId));
+    if (inserted.error) {
+      await supabase.from("food_entries").delete().eq("id", entryId);
+      fail(inserted.error.message);
+    }
+    return;
+  }
+
+  const updated = await supabase.from("food_entries").update(entryColumns).eq("id", existing.id);
+  if (updated.error) fail(updated.error.message);
+
+  // Insert the new list first and remove the old rows only after it succeeded,
+  // so a failure in the middle never leaves the meal without items.
+  const inserted = await supabase.from("food_entry_items").insert(itemRows(existing.id)).select("id");
+  if (inserted.error) fail(inserted.error.message);
+  const oldIds = existing.items.map((item) => item.id);
+  if (oldIds.length > 0) {
+    const removed = await supabase.from("food_entry_items").delete().in("id", oldIds);
+    if (removed.error) {
+      // Roll back the new rows so calories are not counted twice.
+      const newIds = ((inserted.data ?? []) as unknown as { id: string }[]).map((row) => row.id);
+      if (newIds.length > 0) await supabase.from("food_entry_items").delete().in("id", newIds);
+      fail(removed.error.message);
+    }
+  }
 }
 
 export async function deleteFood(id: string): Promise<void> {

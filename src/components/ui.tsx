@@ -1,4 +1,10 @@
-import type { ButtonHTMLAttributes, InputHTMLAttributes, ReactNode, SelectHTMLAttributes } from "react";
+import type {
+  ButtonHTMLAttributes,
+  InputHTMLAttributes,
+  ReactNode,
+  SelectHTMLAttributes,
+  TextareaHTMLAttributes,
+} from "react";
 
 const controlClass =
   "block w-full rounded-xl border border-slate-300 bg-white px-3 py-3 text-base text-slate-900 " +
@@ -36,6 +42,10 @@ export function Field({
 
 export function TextInput(props: InputHTMLAttributes<HTMLInputElement>) {
   return <input {...props} className={controlClass} />;
+}
+
+export function TextArea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
+  return <textarea {...props} className={controlClass} />;
 }
 
 export function Select(props: SelectHTMLAttributes<HTMLSelectElement>) {

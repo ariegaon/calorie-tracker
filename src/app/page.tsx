@@ -17,8 +17,12 @@ import { FoodForm } from "@/components/forms/FoodForm";
 import { DrinkForm } from "@/components/forms/DrinkForm";
 import { ActivityForm } from "@/components/forms/ActivityForm";
 import { WeightForm } from "@/components/forms/WeightForm";
+import { MealForm } from "@/components/forms/MealForm";
+import { AnalyzeMeal } from "@/components/forms/AnalyzeMeal";
 
 type SheetState =
+  | { kind: "ai" }
+  | { kind: "meal"; existing: FoodRow }
   | { kind: "food"; existing: FoodRow | null }
   | { kind: "drink"; existing: DrinkRow | null }
   | { kind: "activity"; existing: ActivityRow | null }
@@ -27,12 +31,22 @@ type SheetState =
 const KIND_ICON: Record<TimelineKind, string> = { food: "🍽", drink: "🥤", activity: "🏃", weight: "⚖" };
 const KIND_LABEL: Record<TimelineKind, string> = { food: "מזון", drink: "משקה", activity: "פעילות", weight: "שקילה" };
 
-const SHEET_TITLES: Record<SheetState["kind"], [string, string]> = {
-  food: ["הוספת מזון", "עריכת מזון"],
-  drink: ["הוספת משקה", "עריכת משקה"],
-  activity: ["הוספת פעילות", "עריכת פעילות"],
-  weight: ["הזנת משקל", "עריכת שקילה"],
-};
+function sheetTitle(sheet: SheetState): string {
+  switch (sheet.kind) {
+    case "ai":
+      return "ניתוח ארוחה ב-AI";
+    case "meal":
+      return "עריכת ארוחה";
+    case "food":
+      return "הוספת מזון ידנית";
+    case "drink":
+      return sheet.existing ? "עריכת משקה" : "הוספת משקה";
+    case "activity":
+      return sheet.existing ? "עריכת פעילות" : "הוספת פעילות";
+    case "weight":
+      return sheet.existing ? "עריכת שקילה" : "הזנת משקל";
+  }
+}
 
 function estimateEnergy(profile: ProfileRow, weightKg: number | null, age: number | null) {
   const sex = profile.sex_for_bmr;
@@ -246,7 +260,7 @@ export default function HomePage() {
   function openEvent(event: TimelineEvent) {
     if (event.kind === "food") {
       const existing = currentData.foods.find((row) => row.id === event.id);
-      if (existing) setSheet({ kind: "food", existing });
+      if (existing) setSheet({ kind: "meal", existing });
     } else if (event.kind === "drink") {
       const existing = currentData.drinks.find((row) => row.id === event.id);
       if (existing) setSheet({ kind: "drink", existing });
@@ -364,8 +378,19 @@ export default function HomePage() {
           )}
         </Card>
 
+        <button
+          type="button"
+          onClick={() => setSheet({ kind: "ai" })}
+          className="flex min-h-14 w-full items-center justify-center gap-2 rounded-2xl bg-emerald-600 px-4 text-base font-bold text-white shadow-sm hover:bg-emerald-700 active:bg-emerald-800"
+        >
+          <span aria-hidden="true" className="text-2xl leading-none">
+            📷
+          </span>
+          צילום או תיאור ארוחה
+        </button>
+
         <div className="grid grid-cols-4 gap-2">
-          <ActionButton icon="🍽" label="מזון" onClick={() => setSheet({ kind: "food", existing: null })} />
+          <ActionButton icon="🍽" label="מזון ידני" onClick={() => setSheet({ kind: "food", existing: null })} />
           <ActionButton icon="🥤" label="משקה" onClick={() => setSheet({ kind: "drink", existing: null })} />
           <ActionButton icon="🏃" label="פעילות" onClick={() => setSheet({ kind: "activity", existing: null })} />
           <ActionButton icon="⚖" label="משקל" onClick={() => setSheet({ kind: "weight", existing: null })} />
@@ -429,8 +454,12 @@ export default function HomePage() {
       </div>
 
       {sheet ? (
-        <Sheet title={SHEET_TITLES[sheet.kind][sheet.existing ? 1 : 0]} onClose={closeSheet}>
-          {sheet.kind === "food" ? (
+        <Sheet title={sheetTitle(sheet)} onClose={closeSheet}>
+          {sheet.kind === "ai" ? (
+            <AnalyzeMeal userId={currentUserId} day={day} onDone={onSaved} />
+          ) : sheet.kind === "meal" ? (
+            <MealForm userId={currentUserId} day={day} existing={sheet.existing} draft={null} onDone={onSaved} />
+          ) : sheet.kind === "food" ? (
             <FoodForm userId={currentUserId} day={day} existing={sheet.existing} onDone={onSaved} />
           ) : sheet.kind === "drink" ? (
             <DrinkForm userId={currentUserId} day={day} existing={sheet.existing} onDone={onSaved} />

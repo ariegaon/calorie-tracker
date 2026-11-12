@@ -15,6 +15,9 @@ export type FoodItemRow = {
   protein_g: number;
   carbs_g: number;
   fat_g: number;
+  confidence?: number | null;
+  source?: string;
+  user_corrected?: boolean;
 };
 
 export type MealType = "breakfast" | "lunch" | "dinner" | "snack";
@@ -382,6 +385,140 @@ export function validateWeight(form: WeightForm): Validation<WeightForm, WeightV
       weightKg: Math.round(weight.value * 100) / 100,
       conditions: conditions === "" ? null : conditions.slice(0, 60),
       notes: cleanNotes(form.notes),
+    },
+  };
+}
+
+// ------------------------------------------------------------------ meal with several items
+
+export type MealItemForm = {
+  name: string;
+  quantityG: string;
+  calories: string;
+  protein: string;
+  carbs: string;
+  fat: string;
+};
+
+export type MealForm = {
+  name: string;
+  mealType: string;
+  dateTime: string;
+  notes: string;
+  items: MealItemForm[];
+};
+
+export type MealItemValues = {
+  name: string;
+  quantityG: number | null;
+  caloriesKcal: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
+};
+
+export type MealValues = {
+  name: string;
+  mealType: MealType | null;
+  consumedAt: string;
+  notes: string | null;
+  items: MealItemValues[];
+};
+
+export type MealErrors = {
+  name?: string;
+  mealType?: string;
+  dateTime?: string;
+  /** General problem with the list, such as having no items. */
+  items?: string;
+  /** Per item, in the same order as the form's items. */
+  itemErrors: Partial<Record<keyof MealItemForm, string>>[];
+};
+
+export type MealValidation = { ok: true; values: MealValues } | { ok: false; errors: MealErrors };
+
+export const MAX_MEAL_ITEMS = 20;
+
+export function validateMeal(form: MealForm): MealValidation {
+  const errors: MealErrors = { itemErrors: form.items.map(() => ({})) };
+  let failed = false;
+
+  const mealType = form.mealType === "" ? null : form.mealType;
+  if (mealType !== null && !(mealType in MEAL_TYPE_LABELS)) {
+    errors.mealType = "סוג ארוחה לא מוכר";
+    failed = true;
+  }
+
+  const at = dateTime(form.dateTime);
+  if ("error" in at) {
+    errors.dateTime = at.error;
+    failed = true;
+  }
+
+  if (form.items.length === 0) {
+    errors.items = "יש להוסיף לפחות מרכיב אחד";
+    failed = true;
+  } else if (form.items.length > MAX_MEAL_ITEMS) {
+    errors.items = `עד ${MAX_MEAL_ITEMS} מרכיבים בארוחה`;
+    failed = true;
+  }
+
+  const items: MealItemValues[] = [];
+  form.items.forEach((item, index) => {
+    const itemErrors = errors.itemErrors[index];
+    const name = item.name.trim();
+    if (name === "") itemErrors.name = "חסר שם";
+    else if (name.length > 80) itemErrors.name = "עד 80 תווים";
+
+    const quantity = optionalNumber(item.quantityG, 1, 5000);
+    if ("error" in quantity) itemErrors.quantityG = quantity.error;
+    const calories = requiredNumber(item.calories, 0, 5000, "קלוריות");
+    if ("error" in calories) itemErrors.calories = calories.error;
+    const protein = optionalNumber(item.protein, 0, 500);
+    if ("error" in protein) itemErrors.protein = protein.error;
+    const carbs = optionalNumber(item.carbs, 0, 1000);
+    if ("error" in carbs) itemErrors.carbs = carbs.error;
+    const fat = optionalNumber(item.fat, 0, 500);
+    if ("error" in fat) itemErrors.fat = fat.error;
+
+    if (
+      "error" in quantity ||
+      "error" in calories ||
+      "error" in protein ||
+      "error" in carbs ||
+      "error" in fat ||
+      Object.keys(itemErrors).length > 0
+    ) {
+      failed = true;
+      return;
+    }
+    items.push({
+      name,
+      quantityG: quantity.value,
+      caloriesKcal: calories.value,
+      proteinG: protein.value ?? 0,
+      carbsG: carbs.value ?? 0,
+      fatG: fat.value ?? 0,
+    });
+  });
+
+  const typedName = form.name.trim();
+  if (typedName.length > 80) {
+    errors.name = "עד 80 תווים";
+    failed = true;
+  }
+
+  if (failed || "error" in at) return { ok: false, errors };
+
+  return {
+    ok: true,
+    values: {
+      // Without a typed name, the meal is named after its items.
+      name: typedName !== "" ? typedName : items.map((item) => item.name).join(", ").slice(0, 80),
+      mealType: mealType as MealType | null,
+      consumedAt: at.value,
+      notes: cleanNotes(form.notes),
+      items,
     },
   };
 }
