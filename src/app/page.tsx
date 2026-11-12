@@ -7,6 +7,7 @@ import { useAuth } from "@/lib/auth/AuthProvider";
 import { getSupabase } from "@/lib/supabase/client";
 import { ACTIVITY_OPTIONS, WEEKLY_GOAL_OPTIONS, loadProfile, type ProfileRow } from "@/lib/profile";
 import { ageInYears } from "@/lib/validation/profile";
+import { baselineExpenditure, bmrMifflinStJeor, calorieTargetForPace } from "@/lib/calculations/energy";
 import { Button, Card, FullPageMessage, Notice } from "@/components/ui";
 
 function Row({ label, value }: { label: string; value: string }) {
@@ -18,12 +19,22 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
+function estimateEnergy(profile: ProfileRow, weightKg: number | null, age: number | null) {
+  const sex = profile.sex_for_bmr;
+  if (!sex || age === null || age <= 0 || profile.height_cm === null || weightKg === null) return null;
+  const bmr = bmrMifflinStJeor({ sex, weightKg, heightCm: Number(profile.height_cm), ageYears: age });
+  const baseline = baselineExpenditure(bmr, Number(profile.activity_factor));
+  const target = calorieTargetForPace(baseline, Number(profile.weekly_weight_change_goal_kg ?? 0), sex);
+  return { bmr, baseline, target };
+}
+
 export default function HomePage() {
   const router = useRouter();
   const { session, loading: authLoading, error: authError } = useAuth();
   const userId = session?.user.id ?? null;
 
   const [profile, setProfile] = useState<ProfileRow | null>(null);
+  const [latestWeightKg, setLatestWeightKg] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
@@ -34,13 +45,24 @@ export default function HomePage() {
       return;
     }
     let cancelled = false;
-    loadProfile(userId)
-      .then((row) => {
+    Promise.all([
+      loadProfile(userId),
+      getSupabase()
+        .from("weight_logs")
+        .select("weight_kg")
+        .eq("user_id", userId)
+        .order("measured_at", { ascending: false })
+        .limit(1),
+    ])
+      .then(([row, weights]) => {
         if (cancelled) return;
+        if (weights.error) throw new Error(weights.error.message);
         if (!row?.onboarding_completed_at) {
           router.replace("/profile");
           return;
         }
+        const latest = (weights.data as { weight_kg: number }[] | null)?.[0];
+        setLatestWeightKg(latest ? Number(latest.weight_kg) : null);
         setProfile(row);
         setLoading(false);
       })
@@ -70,12 +92,38 @@ export default function HomePage() {
   const activity = ACTIVITY_OPTIONS.find((o) => Number(o.value) === Number(profile.activity_factor));
   const pace = WEEKLY_GOAL_OPTIONS.find((o) => Number(o.value) === Number(profile.weekly_weight_change_goal_kg));
 
+  const weightKg = latestWeightKg ?? profile.start_weight_kg;
+  const energy = estimateEnergy(profile, weightKg === null ? null : Number(weightKg), age);
+  const kcal = (value: number) => `${Math.round(value).toLocaleString("he-IL")} קק"ל`;
+
   return (
     <main className="space-y-5">
       <header>
         <h1 className="text-2xl font-bold">שלום{profile.display_name ? `, ${profile.display_name}` : ""}</h1>
         <p className="text-sm text-slate-600">הפרופיל שלך שמור. מסך הבית המלא ייבנה בשלבים הבאים.</p>
       </header>
+
+      {energy ? (
+        <Card>
+          <h2 className="mb-1 font-semibold">ההוצאה הקלורית היומית שלך (הערכה)</h2>
+          <dl className="divide-y divide-slate-100">
+            <Row label="במנוחה מלאה (BMR)" value={kcal(energy.bmr)} />
+            <Row label="ביום רגיל בלי אימון" value={kcal(energy.baseline)} />
+            <Row label="יעד צריכה לפי הקצב שבחרת" value={kcal(energy.target.targetKcal)} />
+          </dl>
+          {energy.target.limitedByMinimum ? (
+            <div className="mt-2">
+              <Notice kind="info">
+                הקצב שבחרת דורש פחות מהמינימום המומלץ, ולכן היעד הועלה למינימום. הקצב בפועל יהיה איטי יותר.
+              </Notice>
+            </div>
+          ) : null}
+          <p className="mt-3 text-xs leading-relaxed text-slate-500">
+            מחושב בנוסחת Mifflin-St Jeor לפי משקל של {Number(weightKg)} ק"ג, כפול רמת הפעילות היומיומית שבחרת.
+            זו הערכה ולא מדידה. קלוריות של אימונים יתווספו בנפרד ביום שבו התאמנת.
+          </p>
+        </Card>
+      ) : null}
 
       <Card>
         <h2 className="mb-1 font-semibold">הנתונים שלך</h2>
