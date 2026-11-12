@@ -3,6 +3,7 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth/AuthProvider";
+import { getSupabase } from "@/lib/supabase/client";
 import {
   ACTIVITY_OPTIONS,
   EMPTY_PROFILE_FORM,
@@ -78,6 +79,14 @@ export default function ProfilePage() {
     } catch {
       setSaveError("השמירה נכשלה. הנתונים לא נשמרו, נסה שוב.");
       setSaving(false);
+    }
+  }
+
+  async function signOut() {
+    try {
+      await getSupabase().auth.signOut();
+    } finally {
+      router.replace("/login");
     }
   }
 
@@ -255,6 +264,13 @@ export default function ProfilePage() {
           </Button>
         ) : null}
       </form>
+
+      <div className="space-y-2 border-t border-slate-200 pt-4">
+        <Button type="button" variant="dangerGhost" onClick={signOut}>
+          התנתקות
+        </Button>
+        <p className="text-center text-xs text-slate-500">מחובר כ-{session?.user.email}</p>
+      </div>
     </main>
   );
 }
