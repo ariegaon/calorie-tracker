@@ -26,10 +26,13 @@
   טבלאות נגזרות (סיכומים, תחזיות, כיול, אינטגרציות) יתווספו בשלבים 4–5.
 - שלב 1, קוד: שלד Next.js 16 + Tailwind 4, RTL, התחברות באימייל וסיסמה (Supabase בצד לקוח, RLS),
   מסך פרופיל/Onboarding עם ולידציה, מסך בית זמני. 8 בדיקות יחידה לוולידציה עוברות (`npm test`).
-- נותר בשלב 1: יצירת פרויקט Vercel (ממתין לאישור גישה של המשתמש לצוות `gaondev`), בנייה ראשונה ותיקון שגיאות בנייה אם יהיו,
-  הגדרת Site URL ב-Supabase Auth לכתובת ה-Vercel, בדיקה בטלפון.
+- Vercel: נוצר פרויקט `calorie-tracker` (`prj_aB09Tb8c2Ijlw6aJKdUuV9iz0kt3`), Node 24, הגנת SSO רק על כתובות preview.
+  הבנייה הראשונה עברה. כתובת: https://calorie-tracker-gaondev.vercel.app
+- נותר בשלב 1: בדיקה של המשתמש בטלפון (הרשמה, פרופיל), והגדרת Site URL ב-Supabase Auth לכתובת ה-Vercel (פעולה ידנית של המשתמש).
 
 ## בעיות פתוחות
 
-- הקוד של שלב 1 עוד לא נבנה בפועל (אין התקנת חבילות בסביבת הפיתוח). הבנייה הראשונה ב-Vercel היא הבדיקה.
+- הפרויקט ב-Vercel אינו מקושר ל-Git (לאינטגרציית GitHub של Vercel אין גישה למאגר), ולכן אין פריסה אוטומטית בדחיפה.
+  אחרי כל דחיפה יש להפעיל פריסה עם `create_deployment` ו-`gitSource` (github, ariegaon/calorie-tracker, main, target production). עובד כל עוד המאגר ציבורי.
+- הזרימות עצמן (הרשמה, שמירת פרופיל) עוד לא נבדקו בדפדפן אמיתי.
 - Vercel: משתני הסביבה הנדרשים הם `NEXT_PUBLIC_SUPABASE_URL` ו-`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. צוות: `gaondev` (`team_TEodwHOSdbadSdhdRcpQl4iu`).
