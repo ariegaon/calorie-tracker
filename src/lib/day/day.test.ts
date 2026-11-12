@@ -112,6 +112,9 @@ const drinkForm = {
   calories: "110",
   caffeineMg: "80",
   hydrationMl: "",
+  protein: "5.5",
+  carbs: "",
+  fat: "",
   notes: "",
 };
 
@@ -121,6 +124,8 @@ test("a drink counts its full volume toward hydration unless told otherwise", ()
   if (!result.ok) return;
   assert.equal(result.values.hydrationMl, 240);
   assert.equal(result.values.caloriesKcal, 110);
+  assert.equal(result.values.proteinG, 5.5);
+  assert.equal(result.values.carbsG, 0);
 
   const partial = validateDrink({ ...drinkForm, hydrationMl: "100" });
   assert.equal(partial.ok && partial.values.hydrationMl, 100);
@@ -210,7 +215,7 @@ function food(id: string, at: Date, kcal: number, protein: number, carbs: number
   };
 }
 
-function drink(id: string, at: Date, volume: number, kcal: number, caffeine: number | null): DrinkRow {
+function drink(id: string, at: Date, volume: number, kcal: number, caffeine: number | null, protein = 0): DrinkRow {
   return {
     id,
     consumed_at: at.toISOString(),
@@ -219,6 +224,9 @@ function drink(id: string, at: Date, volume: number, kcal: number, caffeine: num
     calories_kcal: kcal,
     caffeine_mg: caffeine,
     hydration_ml: volume,
+    protein_g: protein,
+    carbs_g: 0,
+    fat_g: 0,
     notes: null,
   };
 }
@@ -325,4 +333,13 @@ test("timeline marks workouts that are not counted", () => {
   assert.match(timeline[0].detail, /כפילות/);
   assert.equal(timeline[1].kcal, null);
   assert.match(timeline[1].detail, /חסר משך/);
+});
+
+test("protein from drinks counts toward the day's protein", () => {
+  const withShake = { ...day, drinks: [...day.drinks, drink("d3", new Date(2026, 10, 12, 17, 0), 300, 120, null, 24)] };
+  const summary = summarizeDay(withShake, { bmr: 1780, baselineKcal: 2136 });
+  assert.equal(summary.proteinG, 99);
+  assert.equal(summary.drinkKcal, 230);
+  const shake = buildTimeline(withShake, 1780).find((event) => event.key === "drink-d3");
+  assert.match(shake?.detail ?? "", /24 גרם חלבון/);
 });

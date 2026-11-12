@@ -91,3 +91,27 @@ export function FormFooter({
     </div>
   );
 }
+
+/** "Also save as a favorite" option shown in the meal and drink forms. */
+export function FavoriteOption({
+  checked,
+  onChange,
+  disabled,
+}: {
+  checked: boolean;
+  onChange: (checked: boolean) => void;
+  disabled?: boolean;
+}) {
+  return (
+    <label className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-800">
+      <input
+        type="checkbox"
+        className="h-5 w-5 accent-emerald-600"
+        checked={checked}
+        disabled={disabled}
+        onChange={(event) => onChange(event.target.checked)}
+      />
+      ⭐ לשמור גם כמועדף, להוספה בלחיצה אחת
+    </label>
+  );
+}

@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { Button, Field, Notice, Select, TextInput } from "@/components/ui";
-import { FormFooter } from "@/components/Sheet";
+import { FavoriteOption, FormFooter } from "@/components/Sheet";
 import { defaultEntryTime, toLocalInputValue } from "@/lib/day/dates";
 import {
   MAX_MEAL_ITEMS,
@@ -22,6 +22,8 @@ import {
   type NutritionBasis,
 } from "@/lib/ai/meal";
 import { parseNumber } from "@/lib/validation/profile";
+import { mealFavoritePayload } from "@/lib/favorites";
+import { addFavorite } from "@/lib/favorites-data";
 
 export type AiMealDraft = { analysis: MealAnalysis; source: "ai_photo" | "ai_text" };
 
@@ -184,6 +186,8 @@ export function MealForm({
   const [errors, setErrors] = useState<MealErrors>({ itemErrors: [] });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [asFavorite, setAsFavorite] = useState(false);
+  const [favoriteSaved, setFavoriteSaved] = useState(false);
 
   const hasAiItems = form.items.some((item) => item.fromAi);
 
@@ -245,6 +249,11 @@ export function MealForm({
     }
     setSaving(true);
     try {
+      // The favorite is saved first and only once, so a retry after a failed save does not duplicate it.
+      if (asFavorite && !favoriteSaved) {
+        await addFavorite(userId, "meal", result.values.name, mealFavoritePayload(result.values));
+        setFavoriteSaved(true);
+      }
       await saveMeal(userId, result.values, existing, {
         source: draft ? draft.source : "manual",
         aiRawResult: draft ? draft.analysis : null,
@@ -418,6 +427,8 @@ export function MealForm({
       <Field label="הערות (לא חובה)" htmlFor="meal-notes">
         <TextInput id="meal-notes" value={form.notes} onChange={(e) => setField("notes", e.target.value)} />
       </Field>
+
+      <FavoriteOption checked={asFavorite} onChange={setAsFavorite} disabled={saving || favoriteSaved} />
 
       <FormFooter saving={saving} error={error} isEdit={Boolean(existing)} onDelete={onDelete} />
     </form>

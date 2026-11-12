@@ -20,6 +20,9 @@ import { WeightForm } from "@/components/forms/WeightForm";
 import { MealForm } from "@/components/forms/MealForm";
 import { AnalyzeMeal } from "@/components/forms/AnalyzeMeal";
 import { BottomNav } from "@/components/BottomNav";
+import { favoriteCalories, type Favorite } from "@/lib/favorites";
+import { deleteFavorite, loadFavorites, logFavorite } from "@/lib/favorites-data";
+import { buildInsights } from "@/lib/reports/report";
 
 type SheetState =
   | { kind: "ai" }
@@ -161,6 +164,10 @@ export default function HomePage() {
   const [reloadKey, setReloadKey] = useState(0);
   const [sheet, setSheet] = useState<SheetState | null>(null);
   const [addingWater, setAddingWater] = useState(false);
+  const [favorites, setFavorites] = useState<Favorite[]>([]);
+  const [favoriteBusy, setFavoriteBusy] = useState<string | null>(null);
+  const [editingFavorites, setEditingFavorites] = useState(false);
+  const [actionNotice, setActionNotice] = useState<string | null>(null);
 
   // Profile: loaded once per user.
   useEffect(() => {
@@ -209,6 +216,22 @@ export default function HomePage() {
     };
   }, [userId, day, reloadKey]);
 
+  // Favorites: reloaded after every save, because forms can add new ones.
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    loadFavorites(userId)
+      .then((loaded) => {
+        if (!cancelled) setFavorites(loaded);
+      })
+      .catch(() => {
+        // The diary works without favorites; the card simply stays empty.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, reloadKey]);
+
   const closeSheet = useCallback(() => setSheet(null), []);
   const onSaved = useCallback(() => {
     setSheet(null);
@@ -246,6 +269,9 @@ export default function HomePage() {
           caloriesKcal: 0,
           caffeineMg: null,
           hydrationMl: 250,
+          proteinG: 0,
+          carbsG: 0,
+          fatG: 0,
           notes: null,
         },
         null,
@@ -257,6 +283,47 @@ export default function HomePage() {
       setAddingWater(false);
     }
   }
+
+  async function addFavoriteToDay(favorite: Favorite) {
+    setFavoriteBusy(favorite.id);
+    setActionError(null);
+    setActionNotice(null);
+    try {
+      await logFavorite(currentUserId, favorite, defaultEntryTime(day, new Date()).toISOString());
+      setActionNotice(`נוסף: ${favorite.name}`);
+      setReloadKey((key) => key + 1);
+    } catch {
+      setActionError("ההוספה נכשלה. בדוק את החיבור ונסה שוב.");
+    } finally {
+      setFavoriteBusy(null);
+    }
+  }
+
+  async function removeFavorite(favorite: Favorite) {
+    setFavoriteBusy(favorite.id);
+    setActionError(null);
+    try {
+      await deleteFavorite(favorite.id);
+      setFavorites((current) => current.filter((item) => item.id !== favorite.id));
+    } catch {
+      setActionError("ההסרה נכשלה. נסה שוב.");
+    } finally {
+      setFavoriteBusy(null);
+    }
+  }
+
+  const insights = isToday
+    ? buildInsights({
+        now: today,
+        lastWeighInAt: currentData.latestWeighInAt,
+        previousDayHasFood: currentData.previousDayHasFood,
+        hasFoodToday: summary.hasFood,
+        hydrationMl: summary.hydrationMl,
+        waterGoalMl: Number(profile.daily_water_goal_ml),
+        proteinG: summary.proteinG,
+        proteinGoalG: profile.daily_protein_goal_g === null ? null : Number(profile.daily_protein_goal_g),
+      })
+    : [];
 
   function openEvent(event: TimelineEvent) {
     if (event.kind === "food") {
@@ -335,6 +402,7 @@ export default function HomePage() {
 
       {loadError ? <Notice kind="error">{loadError}</Notice> : null}
       {actionError ? <Notice kind="error">{actionError}</Notice> : null}
+      {actionNotice ? <Notice kind="success">{actionNotice}</Notice> : null}
 
       <div className={"space-y-4 transition-opacity " + (refreshing ? "opacity-60" : "")} aria-busy={refreshing}>
         <Card>
@@ -396,6 +464,74 @@ export default function HomePage() {
           <ActionButton icon="🏃" label="פעילות" onClick={() => setSheet({ kind: "activity", existing: null })} />
           <ActionButton icon="⚖" label="משקל" onClick={() => setSheet({ kind: "weight", existing: null })} />
         </div>
+
+        <Card className="space-y-3">
+          <div className="flex items-center justify-between gap-3">
+            <h2 className="font-semibold">⭐ מועדפים</h2>
+            {favorites.length > 0 ? (
+              <button
+                type="button"
+                onClick={() => setEditingFavorites((value) => !value)}
+                className="min-h-9 rounded-lg px-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50"
+              >
+                {editingFavorites ? "סיום" : "עריכה"}
+              </button>
+            ) : null}
+          </div>
+          {favorites.length === 0 ? (
+            <p className="text-sm text-slate-600">
+              עוד אין מועדפים. בטופס של ארוחה או משקה אפשר לסמן "לשמור גם כמועדף", ואז להוסיף אותם מכאן בלחיצה אחת.
+            </p>
+          ) : (
+            <ul className="flex flex-wrap gap-2">
+              {favorites.map((favorite) => (
+                <li key={favorite.id} className="flex items-center">
+                  <button
+                    type="button"
+                    disabled={favoriteBusy !== null || editingFavorites}
+                    onClick={() => addFavoriteToDay(favorite)}
+                    className={
+                      "min-h-11 border border-slate-300 bg-white px-3 text-start text-sm font-medium text-slate-800 hover:bg-slate-100 disabled:opacity-70 " +
+                      (editingFavorites ? "rounded-s-full" : "rounded-full")
+                    }
+                  >
+                    {favoriteBusy === favorite.id ? "רגע… " : ""}
+                    {favorite.name}
+                    <span className="text-slate-500"> · {Math.round(favoriteCalories(favorite))} קק"ל</span>
+                  </button>
+                  {editingFavorites ? (
+                    <button
+                      type="button"
+                      disabled={favoriteBusy !== null}
+                      onClick={() => removeFavorite(favorite)}
+                      aria-label={`הסרת ${favorite.name} מהמועדפים`}
+                      className="flex min-h-11 w-11 items-center justify-center rounded-e-full border border-s-0 border-red-300 bg-red-50 text-lg text-red-700 hover:bg-red-100"
+                    >
+                      ×
+                    </button>
+                  ) : null}
+                </li>
+              ))}
+            </ul>
+          )}
+          {favorites.length > 0 && !editingFavorites ? (
+            <p className="text-xs text-slate-500">לחיצה מוסיפה ליום שמוצג, בשעה הנוכחית. אפשר לערוך אחר כך מציר הזמן.</p>
+          ) : null}
+        </Card>
+
+        {insights.length > 0 ? (
+          <Card>
+            <h2 className="font-semibold">לתשומת לבך</h2>
+            <ul className="mt-2 space-y-2 text-sm text-slate-700">
+              {insights.map((insight) => (
+                <li key={insight.key} className="flex gap-2">
+                  <span aria-hidden="true">•</span>
+                  <span>{insight.text}</span>
+                </li>
+              ))}
+            </ul>
+          </Card>
+        ) : null}
 
         <Card className="space-y-4">
           <ProgressBar

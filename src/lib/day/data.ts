@@ -23,13 +23,19 @@ function fail(message: string): never {
 export type LoadedDay = DayData & {
   /** Most recent weigh-in up to the end of the day, used for the expenditure estimate. */
   latestWeightKg: number | null;
+  latestWeighInAt: string | null;
+  /** Whether any food was logged on the day before this one. */
+  previousDayHasFood: boolean;
 };
 
 export async function loadDay(userId: string, day: Date): Promise<LoadedDay> {
   const supabase = getSupabase();
   const { from, to } = dayRangeIso(day);
 
-  const [foods, drinks, activities, weights, latestWeight] = await Promise.all([
+  const previousFrom = new Date(new Date(from).getTime());
+  previousFrom.setDate(previousFrom.getDate() - 1);
+
+  const [foods, drinks, activities, weights, latestWeight, previousFood] = await Promise.all([
     supabase
       .from("food_entries")
       .select("id, consumed_at, name, meal_type, source, notes")
@@ -38,7 +44,7 @@ export async function loadDay(userId: string, day: Date): Promise<LoadedDay> {
       .lt("consumed_at", to),
     supabase
       .from("drink_entries")
-      .select("id, consumed_at, drink_type, volume_ml, calories_kcal, caffeine_mg, hydration_ml, notes")
+      .select("id, consumed_at, drink_type, volume_ml, calories_kcal, caffeine_mg, hydration_ml, protein_g, carbs_g, fat_g, notes")
       .eq("user_id", userId)
       .gte("consumed_at", from)
       .lt("consumed_at", to),
@@ -59,10 +65,17 @@ export async function loadDay(userId: string, day: Date): Promise<LoadedDay> {
       .lt("measured_at", to),
     supabase
       .from("weight_logs")
-      .select("weight_kg")
+      .select("weight_kg, measured_at")
       .eq("user_id", userId)
       .lt("measured_at", to)
       .order("measured_at", { ascending: false })
+      .limit(1),
+    supabase
+      .from("food_entries")
+      .select("id")
+      .eq("user_id", userId)
+      .gte("consumed_at", previousFrom.toISOString())
+      .lt("consumed_at", from)
       .limit(1),
   ]);
 
@@ -71,6 +84,7 @@ export async function loadDay(userId: string, day: Date): Promise<LoadedDay> {
   if (activities.error) fail(activities.error.message);
   if (weights.error) fail(weights.error.message);
   if (latestWeight.error) fail(latestWeight.error.message);
+  if (previousFood.error) fail(previousFood.error.message);
 
   const foodRows = (foods.data ?? []) as unknown as Omit<FoodRow, "items">[];
   let items: FoodItemRow[] = [];
@@ -87,7 +101,7 @@ export async function loadDay(userId: string, day: Date): Promise<LoadedDay> {
     items = (result.data ?? []) as unknown as FoodItemRow[];
   }
 
-  const latest = (latestWeight.data ?? []) as unknown as { weight_kg: number }[];
+  const latest = (latestWeight.data ?? []) as unknown as { weight_kg: number; measured_at: string }[];
 
   return {
     foods: foodRows.map((row) => ({ ...row, items: items.filter((item) => item.food_entry_id === row.id) })),
@@ -95,6 +109,8 @@ export async function loadDay(userId: string, day: Date): Promise<LoadedDay> {
     activities: (activities.data ?? []) as unknown as ActivityRow[],
     weights: (weights.data ?? []) as unknown as WeightRow[],
     latestWeightKg: latest.length > 0 ? Number(latest[0].weight_kg) : null,
+    latestWeighInAt: latest.length > 0 ? latest[0].measured_at : null,
+    previousDayHasFood: (previousFood.data ?? []).length > 0,
   };
 }
 
@@ -260,6 +276,9 @@ export async function saveDrink(userId: string, values: DrinkValues, existingId:
     calories_kcal: values.caloriesKcal,
     caffeine_mg: values.caffeineMg,
     hydration_ml: values.hydrationMl,
+    protein_g: values.proteinG,
+    carbs_g: values.carbsG,
+    fat_g: values.fatG,
     notes: values.notes,
   };
   const { error } = existingId

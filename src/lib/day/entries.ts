@@ -40,6 +40,9 @@ export type DrinkRow = {
   calories_kcal: number;
   caffeine_mg: number | null;
   hydration_ml: number;
+  protein_g: number;
+  carbs_g: number;
+  fat_g: number;
   notes: string | null;
 };
 
@@ -87,18 +90,21 @@ export type DrinkPreset = {
   caloriesKcal: number;
   caffeineMg: number;
   hydrationMl: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
 };
 
 /** Typical values. Calories and caffeine are estimates and can be edited before saving. */
 export const DRINK_PRESETS: DrinkPreset[] = [
-  { key: "water_glass", label: "כוס מים", drinkType: "מים", volumeMl: 250, caloriesKcal: 0, caffeineMg: 0, hydrationMl: 250 },
-  { key: "water_bottle", label: "בקבוק מים", drinkType: "מים", volumeMl: 500, caloriesKcal: 0, caffeineMg: 0, hydrationMl: 500 },
-  { key: "espresso", label: "אספרסו", drinkType: "אספרסו", volumeMl: 40, caloriesKcal: 2, caffeineMg: 65, hydrationMl: 40 },
-  { key: "americano", label: "אמריקנו", drinkType: "אמריקנו", volumeMl: 240, caloriesKcal: 5, caffeineMg: 95, hydrationMl: 240 },
-  { key: "coffee_milk", label: "קפה עם חלב", drinkType: "קפה עם חלב", volumeMl: 240, caloriesKcal: 110, caffeineMg: 80, hydrationMl: 240 },
-  { key: "tea", label: "תה", drinkType: "תה", volumeMl: 240, caloriesKcal: 2, caffeineMg: 40, hydrationMl: 240 },
-  { key: "juice", label: "מיץ", drinkType: "מיץ", volumeMl: 250, caloriesKcal: 115, caffeineMg: 0, hydrationMl: 250 },
-  { key: "soft_drink", label: "משקה קל", drinkType: "משקה קל", volumeMl: 330, caloriesKcal: 140, caffeineMg: 0, hydrationMl: 330 },
+  { key: "water_glass", label: "כוס מים", drinkType: "מים", volumeMl: 250, caloriesKcal: 0, caffeineMg: 0, hydrationMl: 250, proteinG: 0, carbsG: 0, fatG: 0 },
+  { key: "water_bottle", label: "בקבוק מים", drinkType: "מים", volumeMl: 500, caloriesKcal: 0, caffeineMg: 0, hydrationMl: 500, proteinG: 0, carbsG: 0, fatG: 0 },
+  { key: "espresso", label: "אספרסו", drinkType: "אספרסו", volumeMl: 40, caloriesKcal: 2, caffeineMg: 65, hydrationMl: 40, proteinG: 0, carbsG: 0, fatG: 0 },
+  { key: "americano", label: "אמריקנו", drinkType: "אמריקנו", volumeMl: 240, caloriesKcal: 5, caffeineMg: 95, hydrationMl: 240, proteinG: 0, carbsG: 1, fatG: 0 },
+  { key: "coffee_milk", label: "קפה עם חלב", drinkType: "קפה עם חלב", volumeMl: 240, caloriesKcal: 110, caffeineMg: 80, hydrationMl: 240, proteinG: 5.5, carbsG: 8, fatG: 5.5 },
+  { key: "tea", label: "תה", drinkType: "תה", volumeMl: 240, caloriesKcal: 2, caffeineMg: 40, hydrationMl: 240, proteinG: 0, carbsG: 0, fatG: 0 },
+  { key: "juice", label: "מיץ", drinkType: "מיץ", volumeMl: 250, caloriesKcal: 115, caffeineMg: 0, hydrationMl: 250, proteinG: 1, carbsG: 27, fatG: 0 },
+  { key: "soft_drink", label: "משקה קל", drinkType: "משקה קל", volumeMl: 330, caloriesKcal: 140, caffeineMg: 0, hydrationMl: 330, proteinG: 0, carbsG: 35, fatG: 0 },
 ];
 
 // ------------------------------------------------------------------ validation helpers
@@ -222,6 +228,9 @@ export type DrinkForm = {
   calories: string;
   caffeineMg: string;
   hydrationMl: string;
+  protein: string;
+  carbs: string;
+  fat: string;
   notes: string;
 };
 
@@ -232,6 +241,9 @@ export type DrinkValues = {
   caloriesKcal: number;
   caffeineMg: number | null;
   hydrationMl: number;
+  proteinG: number;
+  carbsG: number;
+  fatG: number;
   notes: string | null;
 };
 
@@ -257,12 +269,22 @@ export function validateDrink(form: DrinkForm): Validation<DrinkForm, DrinkValue
   const hydration = optionalNumber(form.hydrationMl, 0, 5000);
   if ("error" in hydration) errors.hydrationMl = hydration.error;
 
+  const protein = optionalNumber(form.protein, 0, 300);
+  if ("error" in protein) errors.protein = protein.error;
+  const carbs = optionalNumber(form.carbs, 0, 500);
+  if ("error" in carbs) errors.carbs = carbs.error;
+  const fat = optionalNumber(form.fat, 0, 300);
+  if ("error" in fat) errors.fat = fat.error;
+
   if (
     "error" in at ||
     "error" in volume ||
     "error" in calories ||
     "error" in caffeine ||
     "error" in hydration ||
+    "error" in protein ||
+    "error" in carbs ||
+    "error" in fat ||
     Object.keys(errors).length > 0
   ) {
     return { ok: false, errors };
@@ -283,6 +305,9 @@ export function validateDrink(form: DrinkForm): Validation<DrinkForm, DrinkValue
       caloriesKcal: calories.value ?? 0,
       caffeineMg: caffeine.value,
       hydrationMl,
+      proteinG: protein.value ?? 0,
+      carbsG: carbs.value ?? 0,
+      fatG: fat.value ?? 0,
       notes: cleanNotes(form.notes),
     },
   };

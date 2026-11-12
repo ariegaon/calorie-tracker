@@ -60,6 +60,9 @@ export function summarizeDay(data: DayData, energy: { bmr: number; baselineKcal:
   let caffeineMg = 0;
   for (const drink of data.drinks) {
     drinkKcal += Number(drink.calories_kcal);
+    proteinG += Number(drink.protein_g ?? 0);
+    carbsG += Number(drink.carbs_g ?? 0);
+    fatG += Number(drink.fat_g ?? 0);
     hydrationMl += Number(drink.hydration_ml);
     caffeineMg += Number(drink.caffeine_mg ?? 0);
   }
@@ -135,7 +138,8 @@ export function buildTimeline(data: DayData, bmr: number | null): TimelineEvent[
       id: drink.id,
       at: drink.consumed_at,
       title: drink.drink_type,
-      detail: `${drink.volume_ml} מ"ל`,
+      detail:
+        `${drink.volume_ml} מ"ל` + (Number(drink.protein_g ?? 0) > 0 ? ` · ${Math.round(Number(drink.protein_g))} גרם חלבון` : ""),
       kcal: Number(drink.calories_kcal),
     });
   }

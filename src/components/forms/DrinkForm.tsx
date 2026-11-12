@@ -2,7 +2,7 @@
 
 import { useState, type FormEvent } from "react";
 import { Field, TextInput } from "@/components/ui";
-import { FormFooter } from "@/components/Sheet";
+import { FavoriteOption, FormFooter } from "@/components/Sheet";
 import { defaultEntryTime, toLocalInputValue } from "@/lib/day/dates";
 import {
   DRINK_PRESETS,
@@ -12,6 +12,8 @@ import {
   type DrinkRow,
 } from "@/lib/day/entries";
 import { deleteDrink, saveDrink } from "@/lib/day/data";
+import { drinkFavoritePayload } from "@/lib/favorites";
+import { addFavorite } from "@/lib/favorites-data";
 
 function numberText(value: number | null): string {
   return value === null ? "" : String(Number(value));
@@ -25,6 +27,9 @@ function fromPreset(preset: DrinkPreset, dateTime: string): DrinkFormState {
     calories: String(preset.caloriesKcal),
     caffeineMg: preset.caffeineMg > 0 ? String(preset.caffeineMg) : "",
     hydrationMl: String(preset.hydrationMl),
+    protein: preset.proteinG > 0 ? String(preset.proteinG) : "",
+    carbs: preset.carbsG > 0 ? String(preset.carbsG) : "",
+    fat: preset.fatG > 0 ? String(preset.fatG) : "",
     notes: "",
   };
 }
@@ -38,6 +43,9 @@ function initialState(existing: DrinkRow | null, day: Date): DrinkFormState {
     calories: numberText(existing.calories_kcal),
     caffeineMg: numberText(existing.caffeine_mg),
     hydrationMl: numberText(existing.hydration_ml),
+    protein: Number(existing.protein_g ?? 0) > 0 ? numberText(existing.protein_g) : "",
+    carbs: Number(existing.carbs_g ?? 0) > 0 ? numberText(existing.carbs_g) : "",
+    fat: Number(existing.fat_g ?? 0) > 0 ? numberText(existing.fat_g) : "",
     notes: existing.notes ?? "",
   };
 }
@@ -58,6 +66,8 @@ export function DrinkForm({
   const [errors, setErrors] = useState<Partial<Record<keyof DrinkFormState, string>>>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [asFavorite, setAsFavorite] = useState(false);
+  const [favoriteSaved, setFavoriteSaved] = useState(false);
 
   function set(key: keyof DrinkFormState, value: string) {
     setForm((current) => {
@@ -85,6 +95,11 @@ export function DrinkForm({
     }
     setSaving(true);
     try {
+      // The favorite is saved first and only once, so a retry after a failed save does not duplicate it.
+      if (asFavorite && !favoriteSaved) {
+        await addFavorite(userId, "drink", result.values.drinkType, drinkFavoritePayload(result.values));
+        setFavoriteSaved(true);
+      }
       await saveDrink(userId, result.values, existing?.id ?? null);
       onDone();
     } catch {
@@ -187,6 +202,36 @@ export function DrinkForm({
         </Field>
       </div>
 
+      <div className="grid grid-cols-3 gap-3">
+        <Field label="חלבון (ג')" htmlFor="drink-protein" error={errors.protein}>
+          <TextInput
+            id="drink-protein"
+            inputMode="decimal"
+            value={form.protein}
+            aria-invalid={Boolean(errors.protein)}
+            onChange={(e) => set("protein", e.target.value)}
+          />
+        </Field>
+        <Field label="פחמימות (ג')" htmlFor="drink-carbs" error={errors.carbs}>
+          <TextInput
+            id="drink-carbs"
+            inputMode="decimal"
+            value={form.carbs}
+            aria-invalid={Boolean(errors.carbs)}
+            onChange={(e) => set("carbs", e.target.value)}
+          />
+        </Field>
+        <Field label="שומן (ג')" htmlFor="drink-fat" error={errors.fat}>
+          <TextInput
+            id="drink-fat"
+            inputMode="decimal"
+            value={form.fat}
+            aria-invalid={Boolean(errors.fat)}
+            onChange={(e) => set("fat", e.target.value)}
+          />
+        </Field>
+      </div>
+
       <Field label="מתי" htmlFor="drink-time" error={errors.dateTime}>
         <TextInput
           id="drink-time"
@@ -200,6 +245,8 @@ export function DrinkForm({
       <p className="text-xs leading-relaxed text-slate-500">
         הקלוריות והקפאין של המשקאות המוכנים הם ערכים טיפוסיים, לא מדידה. אפשר לתקן אותם לפני השמירה.
       </p>
+
+      <FavoriteOption checked={asFavorite} onChange={setAsFavorite} disabled={saving || favoriteSaved} />
 
       <FormFooter saving={saving} error={error} isEdit={Boolean(existing)} onDelete={onDelete} />
     </form>
