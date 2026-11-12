@@ -24,8 +24,12 @@
 - שלב 1, מסד נתונים: הוחל `0001_core_schema` — 7 טבלאות (profiles, food_entries, food_entry_items,
   drink_entries, activities, weight_logs, body_measurements), RLS עם 4 מדיניות לכל טבלה, בדיקת האבטחה של Supabase נקייה.
   טבלאות נגזרות (סיכומים, תחזיות, כיול, אינטגרציות) יתווספו בשלבים 4–5.
-- נותר בשלב 1: שלד Next.js, RTL, התחברות, מסך פרופיל, פרויקט Vercel.
+- שלב 1, קוד: שלד Next.js 16 + Tailwind 4, RTL, התחברות באימייל וסיסמה (Supabase בצד לקוח, RLS),
+  מסך פרופיל/Onboarding עם ולידציה, מסך בית זמני. 8 בדיקות יחידה לוולידציה עוברות (`npm test`).
+- נותר בשלב 1: יצירת פרויקט Vercel (ממתין לאישור גישה של המשתמש לצוות `gaondev`), בנייה ראשונה ותיקון שגיאות בנייה אם יהיו,
+  הגדרת Site URL ב-Supabase Auth לכתובת ה-Vercel, בדיקה בטלפון.
 
 ## בעיות פתוחות
 
-- דחיפה ל-GitHub נחסמת (403) עד ש-Claude GitHub App יותקן על החשבון `ariegaon` עם גישה למאגר.
+- הקוד של שלב 1 עוד לא נבנה בפועל (אין התקנת חבילות בסביבת הפיתוח). הבנייה הראשונה ב-Vercel היא הבדיקה.
+- Vercel: משתני הסביבה הנדרשים הם `NEXT_PUBLIC_SUPABASE_URL` ו-`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. צוות: `gaondev` (`team_TEodwHOSdbadSdhdRcpQl4iu`).
