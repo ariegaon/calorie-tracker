@@ -4,8 +4,8 @@ import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth/AuthProvider";
 import { loadProfile, type ProfileRow } from "@/lib/profile";
-import { ageInYears } from "@/lib/validation/profile";
-import { baselineExpenditure, bmrMifflinStJeor } from "@/lib/calculations/energy";
+import { profileEnergy } from "@/lib/energy-profile";
+import { loadCalibrationAdjustment, loadEarliestPrediction, type PredictionRow } from "@/lib/weight/extras-data";
 import type { WeightRow } from "@/lib/day/entries";
 import type { DayData } from "@/lib/day/summary";
 import { loadRangeDays, type RangeDay } from "@/lib/reports/data";
@@ -73,6 +73,8 @@ export default function ReportsPage() {
   const [offset, setOffset] = useState(0);
   const [profile, setProfile] = useState<ProfileRow | null>(null);
   const [weights, setWeights] = useState<WeightRow[]>([]);
+  const [adjustment, setAdjustment] = useState(0);
+  const [prediction, setPrediction] = useState<PredictionRow | null>(null);
   const [days, setDays] = useState<RangeDay[] | null>(null);
   const [loading, setLoading] = useState(false);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -87,13 +89,14 @@ export default function ReportsPage() {
       return;
     }
     let cancelled = false;
-    Promise.all([loadProfile(userId), loadWeights(userId)])
-      .then(([profileRow, weightRows]) => {
+    Promise.all([loadProfile(userId), loadWeights(userId), loadCalibrationAdjustment(userId)])
+      .then(([profileRow, weightRows, calibration]) => {
         if (cancelled) return;
         if (!profileRow?.onboarding_completed_at) {
           router.replace("/profile");
           return;
         }
+        setAdjustment(calibration);
         setProfile(profileRow);
         setWeights(weightRows);
       })
@@ -126,6 +129,23 @@ export default function ReportsPage() {
     };
   }, [userId, range.first, range.last]);
 
+  // For a monthly report: the forecast that was first made for the end of that month.
+  useEffect(() => {
+    setPrediction(null);
+    if (!userId || period !== "month") return;
+    let cancelled = false;
+    loadEarliestPrediction(userId, dateOfDay(range.last))
+      .then((row) => {
+        if (!cancelled) setPrediction(row);
+      })
+      .catch(() => {
+        // The report is complete without it.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId, period, range.last]);
+
   const report = useMemo(() => {
     if (!profile || !days) return null;
     const now = new Date();
@@ -136,13 +156,8 @@ export default function ReportsPage() {
     const daily = dailyWeights(weights.map((row) => ({ at: row.measured_at, weightKg: Number(row.weight_kg) })));
     const latest = daily.length > 0 ? daily[daily.length - 1].weightKg : null;
     const weightKg = latest ?? (profile.start_weight_kg === null ? null : Number(profile.start_weight_kg));
-    const age = profile.birth_date ? ageInYears(profile.birth_date, now) : null;
-    const sex = profile.sex_for_bmr;
-    let energy: { bmr: number; baselineKcal: number } | null = null;
-    if (sex && age !== null && age > 0 && profile.height_cm !== null && weightKg !== null) {
-      const bmr = bmrMifflinStJeor({ sex, weightKg, heightCm: Number(profile.height_cm), ageYears: age });
-      energy = { bmr, baselineKcal: baselineExpenditure(bmr, Number(profile.activity_factor)) };
-    }
+    const estimate = profileEnergy(profile, weightKg, now, adjustment);
+    const energy = estimate ? { bmr: estimate.bmr, baselineKcal: estimate.baseline } : null;
 
     return buildReport({
       days: elapsed,
@@ -151,7 +166,7 @@ export default function ReportsPage() {
       waterGoalMl: Number(profile.daily_water_goal_ml),
       weightAverage: movingAverage(daily),
     });
-  }, [profile, days, weights]);
+  }, [profile, days, weights, adjustment]);
 
   function exportCsv() {
     setExportError(null);
@@ -268,6 +283,18 @@ export default function ReportsPage() {
               value={report.documentedDays > 0 && report.averageBalanceKcal !== null ? changeText(report.theoreticalChangeKg) : "אין נתונים"}
             />
           </dl>
+          {prediction ? (
+            <p className="mt-2 text-sm text-slate-700">
+              התחזית הראשונה לסוף החודש הזה ניתנה ב-{rangeFormat.format(new Date(`${prediction.prediction_date}T12:00:00`))}:{" "}
+              <span className="font-semibold tabular-nums">
+                {Number(prediction.combined_weight_kg ?? prediction.trend_weight_kg ?? prediction.theoretical_weight_kg).toFixed(1)} ק"ג
+              </span>
+              {prediction.lower_bound_kg !== null && prediction.upper_bound_kg !== null
+                ? ` (טווח ${Number(prediction.lower_bound_kg).toFixed(1)} עד ${Number(prediction.upper_bound_kg).toFixed(1)})`
+                : ""}
+              .
+            </p>
+          ) : null}
           <p className="mt-2 text-xs leading-relaxed text-slate-500">
             התיאורטי מניח 7,700 קק"ל לק"ג ומתבסס רק על הימים המתועדים, ולכן פער בין השניים צפוי.
           </p>
@@ -321,6 +348,9 @@ export default function ReportsPage() {
           {exportError ? <Notice kind="error">{exportError}</Notice> : null}
           <Button type="button" variant="secondary" onClick={exportCsv}>
             הורדת CSV
+          </Button>
+          <Button type="button" variant="secondary" onClick={() => window.print()}>
+            הדפסה או שמירה כ-PDF
           </Button>
         </Card>
       </div>

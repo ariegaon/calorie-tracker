@@ -270,6 +270,39 @@ export function MealForm({
     }
   }
 
+  /** Logs the same meal again, now, as a new entry. The original stays as it is. */
+  async function onDuplicate() {
+    setError(null);
+    const result = validateMeal({
+      name: form.name,
+      mealType: form.mealType,
+      dateTime: form.dateTime,
+      notes: form.notes,
+      items: form.items.map(fields),
+    });
+    if (!result.ok) {
+      setErrors(result.errors);
+      setError("יש שדות שצריך לתקן");
+      return;
+    }
+    setSaving(true);
+    try {
+      await saveMeal(userId, { ...result.values, consumedAt: new Date().toISOString() }, null, {
+        source: "manual",
+        aiRawResult: null,
+        itemMeta: form.items.map((item) => ({
+          confidence: item.confidenceScore,
+          fromAi: item.fromAi,
+          userCorrected: wasCorrected(item),
+        })),
+      });
+      onDone();
+    } catch {
+      setError("השכפול נכשל. בדוק את החיבור ונסה שוב.");
+      setSaving(false);
+    }
+  }
+
   async function onDelete() {
     if (!existing) return;
     setSaving(true);
@@ -429,6 +462,12 @@ export function MealForm({
       </Field>
 
       <FavoriteOption checked={asFavorite} onChange={setAsFavorite} disabled={saving || favoriteSaved} />
+
+      {existing ? (
+        <Button type="button" variant="secondary" disabled={saving} onClick={onDuplicate}>
+          אכלתי את זה שוב: הוספה עכשיו
+        </Button>
+      ) : null}
 
       <FormFooter saving={saving} error={error} isEdit={Boolean(existing)} onDelete={onDelete} />
     </form>

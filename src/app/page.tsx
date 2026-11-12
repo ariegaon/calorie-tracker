@@ -5,8 +5,8 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth/AuthProvider";
 import { loadProfile, type ProfileRow } from "@/lib/profile";
-import { ageInYears } from "@/lib/validation/profile";
-import { baselineExpenditure, bmrMifflinStJeor, calorieTargetForPace } from "@/lib/calculations/energy";
+import { profileEnergy } from "@/lib/energy-profile";
+import { loadCalibrationAdjustment } from "@/lib/weight/extras-data";
 import { addDays, defaultEntryTime, formatDayLabel, formatTime, isSameDay, startOfDay } from "@/lib/day/dates";
 import { loadDay, saveDrink, type LoadedDay } from "@/lib/day/data";
 import { buildTimeline, summarizeDay, type TimelineEvent, type TimelineKind } from "@/lib/day/summary";
@@ -50,15 +50,6 @@ function sheetTitle(sheet: SheetState): string {
     case "weight":
       return sheet.existing ? "עריכת שקילה" : "הזנת משקל";
   }
-}
-
-function estimateEnergy(profile: ProfileRow, weightKg: number | null, age: number | null) {
-  const sex = profile.sex_for_bmr;
-  if (!sex || age === null || age <= 0 || profile.height_cm === null || weightKg === null) return null;
-  const bmr = bmrMifflinStJeor({ sex, weightKg, heightCm: Number(profile.height_cm), ageYears: age });
-  const baseline = baselineExpenditure(bmr, Number(profile.activity_factor));
-  const target = calorieTargetForPace(baseline, Number(profile.weekly_weight_change_goal_kg ?? 0), sex);
-  return { bmr, baseline, target };
 }
 
 function formatNumber(value: number): string {
@@ -157,6 +148,7 @@ export default function HomePage() {
 
   const [day, setDay] = useState<Date>(() => startOfDay(new Date()));
   const [profile, setProfile] = useState<ProfileRow | null>(null);
+  const [adjustment, setAdjustment] = useState(0);
   const [data, setData] = useState<LoadedDay | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -177,13 +169,14 @@ export default function HomePage() {
       return;
     }
     let cancelled = false;
-    loadProfile(userId)
-      .then((row) => {
+    Promise.all([loadProfile(userId), loadCalibrationAdjustment(userId)])
+      .then(([row, calibration]) => {
         if (cancelled) return;
         if (!row?.onboarding_completed_at) {
           router.replace("/profile");
           return;
         }
+        setAdjustment(calibration);
         setProfile(row);
       })
       .catch(() => {
@@ -248,10 +241,9 @@ export default function HomePage() {
   const currentData: LoadedDay = data;
   const today = new Date();
   const isToday = isSameDay(day, today);
-  const age = profile.birth_date ? ageInYears(profile.birth_date, today) : null;
   const weightKg =
     currentData.latestWeightKg ?? (profile.start_weight_kg === null ? null : Number(profile.start_weight_kg));
-  const energy = estimateEnergy(profile, weightKg, age);
+  const energy = profileEnergy(profile, weightKg, today, adjustment);
   const summary = summarizeDay(currentData, energy ? { bmr: energy.bmr, baselineKcal: energy.baseline } : null);
   const timeline = buildTimeline(currentData, energy?.bmr ?? null);
   const balance = summary.balance;
@@ -439,7 +431,11 @@ export default function HomePage() {
               ) : null}
               <p className="mt-3 text-xs leading-relaxed text-slate-500">
                 ההוצאה הבסיסית מחושבת בנוסחת Mifflin-St Jeor לפי משקל של {weightKg} ק"ג, כפול רמת הפעילות היומיומית
-                שבחרת. המספרים הם הערכה ולא מדידה.
+                שבחרת
+                {energy.adjustmentKcal !== 0
+                  ? `, ובתוספת הכיול האישי שאישרת (${energy.adjustmentKcal > 0 ? "+" : "−"}${Math.abs(energy.adjustmentKcal)} קק"ל ליום)`
+                  : ""}
+                . המספרים הם הערכה ולא מדידה.
               </p>
             </>
           ) : (

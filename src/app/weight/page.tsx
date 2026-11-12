@@ -1,12 +1,19 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth/AuthProvider";
 import { loadProfile, type ProfileRow } from "@/lib/profile";
-import { ageInYears } from "@/lib/validation/profile";
-import { baselineExpenditure, bmrMifflinStJeor } from "@/lib/calculations/energy";
-import type { WeightRow } from "@/lib/day/entries";
+import { profileEnergy } from "@/lib/energy-profile";
+import { BODY_MEASURES, type BodyMeasureKey, type BodyMeasurementRow, type WeightRow } from "@/lib/day/entries";
+import {
+  loadBodyMeasurements,
+  loadCalibrations,
+  saveCalibration,
+  savePredictionSnapshot,
+  type CalibrationRow,
+} from "@/lib/weight/extras-data";
+import { BodyMeasurementForm } from "@/components/forms/BodyMeasurementForm";
 import { loadDayBalances, loadWeights } from "@/lib/weight/data";
 import {
   MIN_CALIBRATION_DOCUMENTED_DAYS,
@@ -27,6 +34,7 @@ import {
   goalEta,
   monthToDate,
   movingAverage,
+  suggestCalibration,
   type DayBalance,
   type Estimate,
 } from "@/lib/weight/trend";
@@ -128,6 +136,13 @@ export default function WeightPage() {
   const [reloadKey, setReloadKey] = useState(0);
   const [range, setRange] = useState<RangeKey>("30");
   const [sheet, setSheet] = useState<{ existing: WeightRow | null } | null>(null);
+  const [calibrations, setCalibrations] = useState<CalibrationRow[]>([]);
+  const [calibrationBusy, setCalibrationBusy] = useState(false);
+  const [calibrationError, setCalibrationError] = useState<string | null>(null);
+  const [measurements, setMeasurements] = useState<BodyMeasurementRow[]>([]);
+  const [measureSheet, setMeasureSheet] = useState<{ existing: BodyMeasurementRow | null } | null>(null);
+  const [measureKey, setMeasureKey] = useState<BodyMeasureKey>("waist");
+  const snapshotSaved = useRef<string | null>(null);
   const [targetDate, setTargetDate] = useState<string>(() => {
     const now = new Date();
     return toDateInput(new Date(now.getFullYear(), now.getMonth() + 1, 0)); // last day of this month
@@ -142,7 +157,12 @@ export default function WeightPage() {
     let cancelled = false;
     (async () => {
       try {
-        const [profileRow, weightRows] = await Promise.all([loadProfile(userId), loadWeights(userId)]);
+        const [profileRow, weightRows, calibrationRows, measurementRows] = await Promise.all([
+          loadProfile(userId),
+          loadWeights(userId),
+          loadCalibrations(userId),
+          loadBodyMeasurements(userId),
+        ]);
         if (cancelled) return;
         if (!profileRow?.onboarding_completed_at) {
           router.replace("/profile");
@@ -153,20 +173,16 @@ export default function WeightPage() {
         const today = new Date();
         const latest = weightRows.length > 0 ? Number(weightRows[weightRows.length - 1].weight_kg) : null;
         const weightKg = latest ?? (profileRow.start_weight_kg === null ? null : Number(profileRow.start_weight_kg));
-        const age = profileRow.birth_date ? ageInYears(profileRow.birth_date, today) : null;
+        const adjustment = calibrationRows.length > 0 ? Number(calibrationRows[0].adjustment_kcal) : 0;
+        const estimate = profileEnergy(profileRow, weightKg, today, adjustment);
         let dayBalances: DayBalance[] = [];
-        if (profileRow.sex_for_bmr && age !== null && age > 0 && profileRow.height_cm !== null && weightKg !== null) {
-          const bmr = bmrMifflinStJeor({
-            sex: profileRow.sex_for_bmr,
-            weightKg,
-            heightCm: Number(profileRow.height_cm),
-            ageYears: age,
-          });
-          const baselineKcal = baselineExpenditure(bmr, Number(profileRow.activity_factor));
-          dayBalances = await loadDayBalances(userId, today, { bmr, baselineKcal });
+        if (estimate) {
+          dayBalances = await loadDayBalances(userId, today, { bmr: estimate.bmr, baselineKcal: estimate.baseline });
           if (cancelled) return;
         }
 
+        setCalibrations(calibrationRows);
+        setMeasurements(measurementRows);
         setProfile(profileRow);
         setWeights(weightRows);
         setBalances(dayBalances);
@@ -181,8 +197,10 @@ export default function WeightPage() {
   }, [authLoading, userId, router, reloadKey]);
 
   const closeSheet = useCallback(() => setSheet(null), []);
+  const closeMeasureSheet = useCallback(() => setMeasureSheet(null), []);
   const onSaved = useCallback(() => {
     setSheet(null);
+    setMeasureSheet(null);
     setReloadKey((key) => key + 1);
   }, []);
 
@@ -209,6 +227,27 @@ export default function WeightPage() {
       calibration: calibrationInsight(trend, calories),
     };
   }, [weights, balances]);
+
+  // Once a day, keep the forecast for the end of this month, to compare later with what happened.
+  useEffect(() => {
+    if (!userId || !model) return;
+    const now = new Date();
+    const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+    const stamp = `${userId}:${now.toDateString()}`;
+    if (snapshotSaved.current === stamp) return;
+    const latestAverageValue = model.average.length > 0 ? model.average[model.average.length - 1].value : null;
+    const monthForecast = forecastWeight({
+      today: model.today,
+      targetDay: dayIndex(monthEnd),
+      currentWeightKg: latestAverageValue,
+      trend: model.trend,
+      calories: model.calories,
+    });
+    snapshotSaved.current = stamp;
+    savePredictionSnapshot(userId, now, monthEnd, monthForecast).catch(() => {
+      snapshotSaved.current = null; // try again on the next load
+    });
+  }, [userId, model]);
 
   if (authError) return <Notice kind="error">{authError}</Notice>;
   if (authLoading || !userId) return <FullPageMessage>טוען…</FullPageMessage>;
@@ -249,6 +288,38 @@ export default function WeightPage() {
   const caloriesMissing = `נדרשים לפחות ${MIN_DOCUMENTED_DAYS} ימים עם רישום מזון ב-${WINDOW_DAYS} הימים האחרונים.`;
   const qualityLabel = { low: "נמוכה", medium: "בינונית", high: "גבוהה" }[quality.level];
   const listed = [...weights].reverse().slice(0, 30);
+
+  const adjustment = calibrations.length > 0 ? Number(calibrations[0].adjustment_kcal) : 0;
+  const suggested = calibration.status === "gap" ? suggestCalibration(calibration.gapKcalPerDay, adjustment) : null;
+  const signedKcal = (value: number) => `${value > 0 ? "+" : value < 0 ? "−" : ""}${Math.abs(value)} קק"ל ליום`;
+
+  async function applyCalibration(next: number, explanation: string) {
+    setCalibrationBusy(true);
+    setCalibrationError(null);
+    try {
+      await saveCalibration(currentUserId, {
+        adjustmentKcal: next,
+        previousAdjustmentKcal: adjustment,
+        gapKcalPerDay: calibration.status === "insufficient" ? null : Math.round(calibration.gapKcalPerDay),
+        weighDays: trend?.weighDays ?? null,
+        documentedDays: calories?.documentedDays ?? null,
+        explanation,
+      });
+      setReloadKey((key) => key + 1);
+    } catch {
+      setCalibrationError("שמירת הכיול נכשלה. נסה שוב.");
+    } finally {
+      setCalibrationBusy(false);
+    }
+  }
+
+  const measure = BODY_MEASURES.find((item) => item.key === measureKey) ?? BODY_MEASURES[0];
+  const measurePoints = measurements
+    .map((row) => ({ row, value: row[measure.column] }))
+    .filter((point): point is { row: BodyMeasurementRow; value: number } => point.value !== null)
+    .map((point) => ({ at: point.row.measured_at, value: Number(point.value) }));
+  const firstMeasure = measurePoints[0] ?? null;
+  const lastMeasure = measurePoints[measurePoints.length - 1] ?? null;
 
   return (
     <main className="space-y-4 pb-20">
@@ -448,8 +519,142 @@ export default function WeightPage() {
             </p>
             <p className="mt-2 text-xs leading-relaxed text-slate-500">
               הסיבות הנפוצות, לפי הסדר: רישום מזון חלקי או הערכות כמות לא מדויקות, קלוריות אימון מוערכות ביתר או בחסר,
-              ותנודות נוזלים. זה לא אומר שחילוף החומרים השתנה. האפליקציה לא משנה יעדים אוטומטית בגלל הפער הזה.
+              ותנודות נוזלים. זה לא אומר שחילוף החומרים השתנה. האפליקציה לא משנה דבר בלי אישורך.
             </p>
+            {suggested !== null ? (
+              <div className="mt-3 space-y-2">
+                <p className="text-sm text-slate-700">
+                  אפשר לכייל את הערכת ההוצאה היומית ל-{signedKcal(suggested)} לעומת הנוסחה (כרגע: {adjustment === 0 ? "בלי כיול" : signedKcal(adjustment)}).
+                  מוחל רק חצי מהפער, כדי שחודש חריג אחד לא יטה את החישוב.
+                </p>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  disabled={calibrationBusy}
+                  onClick={() =>
+                    applyCalibration(
+                      suggested,
+                      `פער של ${Math.round(calibration.gapKcalPerDay)} קק"ל ליום בין מגמת המשקל לחישוב הקלוריות. הוחל חצי ממנו.`,
+                    )
+                  }
+                >
+                  {calibrationBusy ? "שומר…" : "אישור הכיול"}
+                </Button>
+              </div>
+            ) : null}
+          </>
+        )}
+
+        {adjustment !== 0 ? (
+          <div className="mt-3 space-y-2 border-t border-slate-100 pt-3">
+            <p className="text-sm text-slate-700">
+              כיול בתוקף: <span className="font-semibold">{signedKcal(adjustment)}</span> להוצאה היומית, מאז{" "}
+              {dateFormat.format(new Date(calibrations[0].effective_at))}.
+            </p>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={calibrationBusy}
+              onClick={() => applyCalibration(0, "הכיול אופס לבקשת המשתמש. החישוב חזר לנוסחה בלבד.")}
+            >
+              איפוס הכיול
+            </Button>
+          </div>
+        ) : null}
+        {calibrationError ? (
+          <div className="mt-2">
+            <Notice kind="error">{calibrationError}</Notice>
+          </div>
+        ) : null}
+        {calibrations.length > 0 ? (
+          <details className="mt-3 text-sm">
+            <summary className="cursor-pointer font-semibold text-slate-700">היסטוריית כיול ({calibrations.length})</summary>
+            <ul className="mt-2 space-y-2 text-xs text-slate-600">
+              {calibrations.map((row) => (
+                <li key={row.id}>
+                  <span className="font-semibold text-slate-800">
+                    {dateFormat.format(new Date(row.effective_at))}: {signedKcal(Number(row.previous_adjustment_kcal))} ←{" "}
+                    {signedKcal(Number(row.adjustment_kcal))}
+                  </span>
+                  <br />
+                  {row.explanation}
+                </li>
+              ))}
+            </ul>
+          </details>
+        ) : null}
+      </Card>
+
+      <Card className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
+          <h2 className="font-semibold">מדידות גוף</h2>
+          <button
+            type="button"
+            onClick={() => setMeasureSheet({ existing: null })}
+            className="min-h-9 rounded-lg px-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50"
+          >
+            + מדידה
+          </button>
+        </div>
+        {measurements.length === 0 ? (
+          <p className="text-sm text-slate-600">
+            עוד אין מדידות. היקפים (מותניים, חזה, ירך) משלימים את המשקל, כי לפעמים הגוף משתנה גם כשהמשקל לא זז.
+          </p>
+        ) : (
+          <>
+            <div className="flex flex-wrap gap-1" role="group" aria-label="בחירת מדידה">
+              {BODY_MEASURES.map((item) => (
+                <button
+                  key={item.key}
+                  type="button"
+                  aria-pressed={measureKey === item.key}
+                  onClick={() => setMeasureKey(item.key)}
+                  className={
+                    "min-h-9 rounded-full px-3 text-xs font-semibold " +
+                    (measureKey === item.key ? "bg-slate-800 text-white" : "bg-slate-100 text-slate-700 hover:bg-slate-200")
+                  }
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            {lastMeasure && firstMeasure ? (
+              <>
+                <p className="text-sm text-slate-700">
+                  אחרון: <span className="font-bold tabular-nums">{lastMeasure.value} {measure.unit}</span>
+                  {measurePoints.length > 1
+                    ? ` · שינוי מהמדידה הראשונה: ${(lastMeasure.value - firstMeasure.value > 0 ? "+" : "") + (lastMeasure.value - firstMeasure.value).toFixed(1)} ${measure.unit}`
+                    : ""}
+                </p>
+                <WeightChart
+                  daily={dailyWeights(measurePoints.map((point) => ({ at: point.at, weightKg: point.value })))}
+                  average={[]}
+                  targetKg={null}
+                  unit={measure.unit}
+                />
+              </>
+            ) : (
+              <p className="text-sm text-slate-600">עוד אין ערכים למדידה הזאת.</p>
+            )}
+            <ul className="divide-y divide-slate-100">
+              {[...measurements].reverse().slice(0, 10).map((row) => (
+                <li key={row.id}>
+                  <button
+                    type="button"
+                    onClick={() => setMeasureSheet({ existing: row })}
+                    aria-label="עריכת מדידה"
+                    className="flex w-full flex-col gap-0.5 py-2.5 text-start hover:bg-slate-50"
+                  >
+                    <span className="text-sm text-slate-700">{shortDateTime.format(new Date(row.measured_at))}</span>
+                    <span className="text-xs text-slate-500">
+                      {BODY_MEASURES.filter((item) => row[item.column] !== null)
+                        .map((item) => `${item.label} ${Number(row[item.column])} ${item.unit}`)
+                        .join(" · ")}
+                    </span>
+                  </button>
+                </li>
+              ))}
+            </ul>
           </>
         )}
       </Card>
@@ -485,6 +690,12 @@ export default function WeightPage() {
       {sheet ? (
         <Sheet title={sheet.existing ? "עריכת שקילה" : "הזנת משקל"} onClose={closeSheet}>
           <WeightForm userId={currentUserId} day={new Date()} existing={sheet.existing} onDone={onSaved} />
+        </Sheet>
+      ) : null}
+
+      {measureSheet ? (
+        <Sheet title={measureSheet.existing ? "עריכת מדידה" : "מדידת גוף חדשה"} onClose={closeMeasureSheet}>
+          <BodyMeasurementForm userId={currentUserId} existing={measureSheet.existing} onDone={onSaved} />
         </Sheet>
       ) : null}
 

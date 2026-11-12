@@ -547,3 +547,58 @@ export function validateMeal(form: MealForm): MealValidation {
     },
   };
 }
+
+// ------------------------------------------------------------------ body measurements
+
+export type BodyMeasurementRow = {
+  id: string;
+  measured_at: string;
+  waist_cm: number | null;
+  chest_cm: number | null;
+  hips_cm: number | null;
+  thigh_cm: number | null;
+  arm_cm: number | null;
+  body_fat_percent: number | null;
+  notes: string | null;
+};
+
+export const BODY_MEASURES = [
+  { key: "waist", column: "waist_cm", label: "מותניים", unit: 'ס"מ', min: 30, max: 250 },
+  { key: "chest", column: "chest_cm", label: "חזה", unit: 'ס"מ', min: 30, max: 250 },
+  { key: "hips", column: "hips_cm", label: "ירכיים (אגן)", unit: 'ס"מ', min: 30, max: 250 },
+  { key: "thigh", column: "thigh_cm", label: "ירך", unit: 'ס"מ', min: 10, max: 150 },
+  { key: "arm", column: "arm_cm", label: "זרוע", unit: 'ס"מ', min: 10, max: 100 },
+  { key: "bodyFat", column: "body_fat_percent", label: "אחוז שומן", unit: "%", min: 2, max: 70 },
+] as const;
+
+export type BodyMeasureKey = (typeof BODY_MEASURES)[number]["key"];
+
+export type BodyMeasurementForm = { dateTime: string; notes: string } & Record<BodyMeasureKey, string>;
+
+export type BodyMeasurementValues = { measuredAt: string; notes: string | null } & Record<BodyMeasureKey, number | null>;
+
+export function validateBodyMeasurement(
+  form: BodyMeasurementForm,
+): Validation<BodyMeasurementForm, BodyMeasurementValues> {
+  const errors: Errors<BodyMeasurementForm> = {};
+
+  const at = dateTime(form.dateTime);
+  if ("error" in at) errors.dateTime = at.error;
+
+  const numbers = {} as Record<BodyMeasureKey, number | null>;
+  let filled = 0;
+  for (const measure of BODY_MEASURES) {
+    const parsed = optionalNumber(form[measure.key], measure.min, measure.max);
+    if ("error" in parsed) {
+      errors[measure.key] = parsed.error;
+      continue;
+    }
+    numbers[measure.key] = parsed.value === null ? null : Math.round(parsed.value * 10) / 10;
+    if (parsed.value !== null) filled += 1;
+  }
+
+  if ("error" in at || Object.keys(errors).length > 0) return { ok: false, errors };
+  if (filled === 0) return { ok: false, errors: { waist: "יש למלא לפחות מדידה אחת" } };
+
+  return { ok: true, values: { measuredAt: at.value, notes: cleanNotes(form.notes), ...numbers } };
+}

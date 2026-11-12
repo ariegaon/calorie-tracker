@@ -344,3 +344,27 @@ export function calibrationInsight(trend: TrendFit | null, calories: CalorieTren
   if (Math.abs(gap) < CALIBRATION_TOLERANCE_KCAL) return { status: "consistent", gapKcalPerDay: gap };
   return { status: "gap", gapKcalPerDay: gap };
 }
+
+// ------------------------------------------------------------------ applying a calibration
+
+export const MAX_CALIBRATION_KCAL = 500;
+/** Only this share of a measured gap is applied at once, so one noisy month cannot swing the estimate. */
+export const CALIBRATION_STEP_SHARE = 0.5;
+
+/**
+ * The expenditure adjustment to offer for a measured gap, on top of the adjustment already in force.
+ * A positive gap means the scale lags behind the calculation, so the expenditure estimate is lowered.
+ * Half of the gap is applied, rounded to 10 kcal and kept within +/-500.
+ * Returns null when the step would change nothing.
+ */
+export function suggestCalibration(gapKcalPerDay: number, currentAdjustmentKcal: number): number | null {
+  if (!Number.isFinite(gapKcalPerDay) || Math.abs(gapKcalPerDay) < CALIBRATION_TOLERANCE_KCAL) return null;
+  const step = Math.round((gapKcalPerDay * CALIBRATION_STEP_SHARE) / 10) * 10;
+  const next = Math.max(-MAX_CALIBRATION_KCAL, Math.min(MAX_CALIBRATION_KCAL, currentAdjustmentKcal - step));
+  return next === currentAdjustmentKcal ? null : next;
+}
+
+/** Baseline expenditure with the confirmed calibration applied. Never below the resting rate. */
+export function calibratedBaseline(baselineKcal: number, bmr: number, adjustmentKcal: number): number {
+  return Math.max(bmr, baselineKcal + adjustmentKcal);
+}

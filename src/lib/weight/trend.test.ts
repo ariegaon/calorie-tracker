@@ -316,3 +316,55 @@ test("a lasting gap is reported in kcal a day, with its direction", () => {
   assert.equal(faster.status, "gap");
   if (faster.status === "gap") near(faster.gapKcalPerDay, -385, 1e-6);
 });
+
+// ------------------------------------------------------------------ applying a calibration
+
+import { calibratedBaseline, suggestCalibration } from "./trend.ts";
+import { validateBodyMeasurement } from "../day/entries.ts";
+
+test("half of a measured gap is offered, against the direction of the gap", () => {
+  assert.equal(suggestCalibration(385, 0), -190); // 192.5 rounds to 190
+  assert.equal(suggestCalibration(-385, 0), 190);
+  assert.equal(suggestCalibration(300, -100), -250);
+});
+
+test("no calibration is offered for small gaps or at the limit", () => {
+  assert.equal(suggestCalibration(100, 0), null);
+  assert.equal(suggestCalibration(-149, 50), null);
+  assert.equal(suggestCalibration(400, -500), null);
+  assert.equal(suggestCalibration(Number.NaN, 0), null);
+  assert.equal(suggestCalibration(2000, 0), -500);
+});
+
+test("a calibrated baseline never drops below the resting rate", () => {
+  assert.equal(calibratedBaseline(2136, 1780, -190), 1946);
+  assert.equal(calibratedBaseline(2136, 1780, 150), 2286);
+  assert.equal(calibratedBaseline(2136, 1780, -500), 1780);
+  assert.equal(calibratedBaseline(2136, 1780, 0), 2136);
+});
+
+// ------------------------------------------------------------------ body measurements
+
+const emptyMeasures = { dateTime: "2026-11-12T07:00", notes: "", waist: "", chest: "", hips: "", thigh: "", arm: "", bodyFat: "" };
+
+test("body measurements: any subset may be filled, rounded to one decimal", () => {
+  const result = validateBodyMeasurement({ ...emptyMeasures, waist: "92,46", bodyFat: "21" });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.values.waist, 92.5);
+  assert.equal(result.values.bodyFat, 21);
+  assert.equal(result.values.chest, null);
+  assert.equal(result.values.arm, null);
+});
+
+test("body measurements: at least one value, within range, with a valid time", () => {
+  const none = validateBodyMeasurement(emptyMeasures);
+  assert.equal(none.ok, false);
+  if (!none.ok) assert.ok(none.errors.waist);
+
+  const outOfRange = validateBodyMeasurement({ ...emptyMeasures, waist: "500", arm: "abc", bodyFat: "1" });
+  assert.equal(outOfRange.ok, false);
+  if (!outOfRange.ok) assert.deepEqual(Object.keys(outOfRange.errors).sort(), ["arm", "bodyFat", "waist"]);
+
+  assert.equal(validateBodyMeasurement({ ...emptyMeasures, dateTime: "", waist: "90" }).ok, false);
+});

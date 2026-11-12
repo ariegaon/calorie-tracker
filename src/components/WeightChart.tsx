@@ -39,15 +39,18 @@ export function WeightChart({
   daily,
   average,
   targetKg,
+  unit = 'ק"ג',
 }: {
   daily: DailyWeight[];
   average: AveragePoint[];
   targetKg: number | null;
+  /** Unit shown next to values. The chart is also used for body measurements. */
+  unit?: string;
 }) {
   const [selected, setSelected] = useState<number | null>(null);
 
   if (daily.length === 0) {
-    return <p className="py-8 text-center text-sm text-slate-500">עוד אין שקילות בטווח הזה.</p>;
+    return <p className="py-8 text-center text-sm text-slate-500">עוד אין מדידות בטווח הזה.</p>;
   }
 
   const values = [...daily.map((d) => d.weightKg), ...average.map((a) => a.value)];
@@ -81,8 +84,8 @@ export function WeightChart({
 
   const latest = daily[daily.length - 1];
   const summary =
-    `גרף משקל: ${daily.length} ימי שקילה, מ-${dayFormat.format(dateOfDay(firstDay))} עד ${dayFormat.format(dateOfDay(lastDay))}. ` +
-    `שקילה אחרונה ${latest.weightKg.toFixed(1)} ק"ג.`;
+    `גרף לאורך זמן: ${daily.length} ימי מדידה, מ-${dayFormat.format(dateOfDay(firstDay))} עד ${dayFormat.format(dateOfDay(lastDay))}. ` +
+    `מדידה אחרונה ${latest.weightKg.toFixed(1)} ${unit}.`;
 
   return (
     <div className="space-y-2">
@@ -90,8 +93,8 @@ export function WeightChart({
         {selectedPoint ? (
           <>
             <span className="font-semibold">{dayFormat.format(dateOfDay(selectedPoint.day))}: </span>
-            {selectedPoint.weightKg.toFixed(1)} ק"ג
-            {selectedAverage !== undefined ? ` · ממוצע 7 ימים ${selectedAverage.toFixed(1)} ק"ג` : ""}
+            {selectedPoint.weightKg.toFixed(1)} {unit}
+            {selectedAverage !== undefined ? ` · ממוצע 7 ימים ${selectedAverage.toFixed(1)} ${unit}` : ""}
           </>
         ) : (
           <span className="text-slate-500">אפשר לגעת בנקודה כדי לראות את הערך שלה.</span>
@@ -182,14 +185,16 @@ export function WeightChart({
           <svg width="12" height="12" aria-hidden="true">
             <circle cx="6" cy="6" r="4" fill={COLOR.weighIn} />
           </svg>
-          שקילה
+          מדידה
         </li>
-        <li className="flex items-center gap-1.5">
-          <svg width="18" height="12" aria-hidden="true">
-            <line x1="1" x2="17" y1="6" y2="6" stroke={COLOR.average} strokeWidth="2" strokeLinecap="round" />
-          </svg>
-          ממוצע נע של 7 ימים
-        </li>
+        {average.length > 1 ? (
+          <li className="flex items-center gap-1.5">
+            <svg width="18" height="12" aria-hidden="true">
+              <line x1="1" x2="17" y1="6" y2="6" stroke={COLOR.average} strokeWidth="2" strokeLinecap="round" />
+            </svg>
+            ממוצע נע של 7 ימים
+          </li>
+        ) : null}
         {showGoal ? (
           <li className="flex items-center gap-1.5">
             <svg width="18" height="12" aria-hidden="true">
