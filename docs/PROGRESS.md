@@ -21,7 +21,11 @@
 - נוצר פרויקט Supabase `CalorieTracker` (ref `wdbepkiggtjxcotviuwv`).
 - נוצר המאגר `ariegaon/calorie-tracker`.
 - נוספו `CLAUDE.md`, `docs/SPEC.md`, `docs/PROGRESS.md`.
+- שלב 1, מסד נתונים: הוחל `0001_core_schema` — 7 טבלאות (profiles, food_entries, food_entry_items,
+  drink_entries, activities, weight_logs, body_measurements), RLS עם 4 מדיניות לכל טבלה, בדיקת האבטחה של Supabase נקייה.
+  טבלאות נגזרות (סיכומים, תחזיות, כיול, אינטגרציות) יתווספו בשלבים 4–5.
+- נותר בשלב 1: שלד Next.js, RTL, התחברות, מסך פרופיל, פרויקט Vercel.
 
 ## בעיות פתוחות
 
-- (אין)
+- דחיפה ל-GitHub נחסמת (403) עד ש-Claude GitHub App יותקן על החשבון `ariegaon` עם גישה למאגר.
