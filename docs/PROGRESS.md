@@ -1,6 +1,6 @@
 # מצב הפיתוח
 
-עודכן לאחרונה: 2026-11-12
+עודכן לאחרונה: 2026-11-13
 
 ## שלבים
 
@@ -10,7 +10,7 @@
 | 2 | מנוע חישובים: BMR, TDEE, מאזן + בדיקות יחידה | הושלם (המשתמש אישר להמשיך) |
 | 3 | מסך בית והזנה ידנית: מזון, שתייה, פעילות, משקל, ציר זמן | הושלם (המשתמש בדק והמשיך) |
 | 4 | משקל ותחזית: גרף, ממוצע נע, תחזית לתאריך, איכות נתונים, כיול | נבנה ונפרס במלואו, ממתין לבדיקת המשתמש |
-| 5 | אנדרואיד: מעטפת Capacitor + Health Connect, בניית APK ב-GitHub Actions | לא התחיל. המשתמש ביקש לעשות בסוף השבוע (14–15.11.2026) |
+| 5 | אנדרואיד: מעטפת Capacitor + Health Connect, בניית APK ב-GitHub Actions | ה-APK נבנה (run 1) ופורסם. ממתין להתקנה ובדיקה של המשתמש בטלפון |
 | 6 | צילום ארוחה ב-AI: ניתוח, אישור ועריכה, מועדפים | הוקדם לבקשת המשתמש. ניתוח + אישור נבנו ונפרסו, ממתין לבדיקה. מועדפים ושמירת תמונה עוד לא |
 | 7 | דוחות והתראות: יומי, שבועי, חודשי, ייצוא CSV | נבנה ונפרס, ממתין לבדיקת המשתמש. התראות push יגיעו עם האנדרואיד |
 | 8 | ליטוש ו-QA: בדיקות במכשיר, אבטחה, תיעוד, Strava אופציונלי | לא התחיל |
@@ -63,11 +63,30 @@
   הדפסה/שמירה כ-PDF דרך הדפדפן בדוחות. סך הכול 109 בדיקות עוברות.
   נשאר מהמפרט: שמירת תמונת הארוחה, סריקת ברקוד, צילום מסך של פעילות, התראות push, Strava, אנגלית.
 
+### 2026-11-13
+- תיקון: אייקון לפי סוג פעילות (`activityIcon`), ופרטי פעילות שלא נחתכים בציר הזמן.
+- שלב 5: מעטפת Capacitor 8 (`capacitor.config.json`, appId `io.github.ariegaon.calorietracker`) שטוענת את האתר מ-Vercel (`server.url`),
+  כך שעדכוני ווב מגיעים לאפליקציה בלי APK חדש. תוסף `@capgo/capacitor-health` 8.12.4 לקריאת אימונים מ-Health Connect.
+  תיקיית `android/` לא נשמרת במאגר: היא נוצרת ב-CI (`npx cap add android`) ומותאמת ב-`scripts/prepare-android.mjs`
+  (minSdk 26, הרשאות Health, קישור מדיניות פרטיות, מספר גרסה).
+- CI: `.github/workflows/android.yml` בונה APK ומפרסם אותו כ-release בשם `android-latest`
+  (https://github.com/ariegaon/calorie-tracker/releases/download/android-latest/calorie-tracker.apk).
+  לוג הבנייה נדחף לענף `ci-logs` (`status.txt`, `android-build.log`), כי אין גישה ל-Actions API מסביבת הפיתוח:
+  `git fetch origin '+refs/heads/ci-logs:refs/remotes/origin/ci-logs' && git show origin/ci-logs:status.txt`.
+  מפתח החתימה (debug) נשמר ב-cache של Actions; אם ה-cache אובד, צריך להסיר את האפליקציה פעם אחת לפני התקנת APK חדש.
+- סנכרון: `src/lib/health/` (`sync.ts` טהור עם בדיקות, `native.ts` גשר לתוסף, `sync-data.ts`, `HealthSyncCard`).
+  אימון מסונכרן נשמר עם `calories_total_kcal` (התוסף מדווח totalEnergyBurned) ומנוע החישוב מפחית את חלק המנוחה.
+  אימון ידני שחופף לאימון מסונכרן מסומן `excluded_from_balance` (נשאר ביומן, לא נספר); המשתמש יכול להפוך זאת בטופס הפעילות.
+  חלון הקריאה: 30 ימים. סנכרון אוטומטי בפתיחת האפליקציה אם עברו 15 דקות. סך הכול 120 בדיקות עוברות.
+- נוסף דף `/privacy` (נדרש ל-Health Connect) וקישור להורדת ה-APK במסך הפרופיל.
+
 ## בעיות פתוחות
 
 - הפרויקט ב-Vercel אינו מקושר ל-Git (לאינטגרציית GitHub של Vercel אין גישה למאגר), ולכן אין פריסה אוטומטית בדחיפה.
   אחרי כל דחיפה יש להפעיל פריסה עם `create_deployment` ו-`gitSource` (github, ariegaon/calorie-tracker, main, target production). עובד כל עוד המאגר ציבורי.
 - הקריאה ל-OpenAI עוד לא נבדקה מקצה לקצה (שם המודל, קלט תמונה). אם נכשלת: לבדוק runtime logs ב-Vercel.
+- אנדרואיד: ה-APK מעולם לא הורץ. לא נבדקו: מסך ההרשאות של Health Connect, קריאת האימונים בפועל, צילום ארוחה מתוך ה-WebView.
+  לא ידוע אם `totalEnergyBurned` של התוסף באנדרואיד הוא קלוריות כוללות או פעילות; לאמת מול Samsung Health על אימון מוכר.
 - ההרשמה לאפליקציה פתוחה לכל אחד; מומלץ שהמשתמש יכבה הרשמות חדשות ב-Supabase Auth.
 - Site URL ב-Supabase Auth עדיין צריך להיות מוגדר לכתובת ה-Vercel (פעולה ידנית).
 - Vercel: משתני הסביבה הנדרשים הם `NEXT_PUBLIC_SUPABASE_URL` ו-`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. צוות: `gaondev` (`team_TEodwHOSdbadSdhdRcpQl4iu`).
