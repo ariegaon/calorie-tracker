@@ -48,6 +48,7 @@ export function ActivityForm({
   const [errors, setErrors] = useState<Partial<Record<keyof ActivityFormState, string>>>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [counted, setCounted] = useState(existing ? !existing.excluded_from_balance : true);
 
   const typeOptions: string[] = [...ACTIVITY_TYPES];
   if (!typeOptions.includes(form.activityType)) typeOptions.push(form.activityType);
@@ -67,7 +68,7 @@ export function ActivityForm({
     }
     setSaving(true);
     try {
-      await saveActivity(userId, result.values, existing?.id ?? null);
+      await saveActivity(userId, result.values, existing?.id ?? null, !counted);
       onDone();
     } catch {
       setError("השמירה נכשלה. בדוק את החיבור ונסה שוב.");
@@ -91,7 +92,12 @@ export function ActivityForm({
   return (
     <form onSubmit={onSubmit} noValidate className="space-y-4">
       {existing?.external_provider ? (
-        <Notice kind="info">הפעילות הזאת הגיעה מסנכרון. שינוי כאן לא ישנה אותה במקור.</Notice>
+        <Notice kind="info">
+          הפעילות הזאת הגיעה מסנכרון. שינוי כאן לא ישנה אותה במקור.
+          {existing.calories_total_kcal !== null
+            ? ` המקור דיווח ${Math.round(Number(existing.calories_total_kcal))} קק"ל כוללות; במאזן נספר החלק שמעבר להוצאה במנוחה. אם תזין כאן קלוריות פעילות, הן יקבעו במקום.`
+            : ""}
+        </Notice>
       ) : null}
 
       <div className="grid grid-cols-2 gap-3">
@@ -150,6 +156,23 @@ export function ActivityForm({
           onChange={(e) => set("dateTime", e.target.value)}
         />
       </Field>
+
+      {existing ? (
+        <label className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-800">
+          <input
+            type="checkbox"
+            className="h-5 w-5 accent-emerald-600"
+            checked={counted}
+            onChange={(event) => setCounted(event.target.checked)}
+          />
+          לספור את הפעילות במאזן הקלורי
+        </label>
+      ) : null}
+      {existing && !counted ? (
+        <p className="text-xs leading-relaxed text-slate-500">
+          פעילות שלא נספרת נשארת ביומן אבל לא מוסיפה קלוריות. כך מטפלים באימון שנרשם פעמיים, למשל גם ידנית וגם מסנכרון.
+        </p>
+      ) : null}
 
       <Field label="הערות (לא חובה)" htmlFor="activity-notes">
         <TextInput id="activity-notes" value={form.notes} onChange={(e) => set("notes", e.target.value)} />

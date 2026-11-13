@@ -1,0 +1,13 @@
+{
+  "appId": "io.github.ariegaon.calorietracker",
+  "appName": "מאזן קלורי",
+  "webDir": "capacitor-web",
+  "server": {
+    "url": "https://calorie-tracker-gaondev.vercel.app",
+    "androidScheme": "https",
+    "errorPath": "offline.html"
+  },
+  "android": {
+    "allowMixedContent": false
+  }
+}

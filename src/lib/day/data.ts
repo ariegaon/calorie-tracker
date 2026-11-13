@@ -294,7 +294,12 @@ export async function deleteDrink(id: string): Promise<void> {
 
 // ------------------------------------------------------------------ activity
 
-export async function saveActivity(userId: string, values: ActivityValues, existingId: string | null): Promise<void> {
+export async function saveActivity(
+  userId: string,
+  values: ActivityValues,
+  existingId: string | null,
+  excludedFromBalance = false,
+): Promise<void> {
   const supabase = getSupabase();
   const columns = {
     activity_type: values.activityType,
@@ -302,6 +307,7 @@ export async function saveActivity(userId: string, values: ActivityValues, exist
     duration_seconds: values.durationSeconds,
     distance_m: values.distanceM,
     calories_active_kcal: values.caloriesActiveKcal,
+    excluded_from_balance: excludedFromBalance,
     notes: values.notes,
   };
   const { error } = existingId

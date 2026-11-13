@@ -20,6 +20,7 @@ import { WeightForm } from "@/components/forms/WeightForm";
 import { MealForm } from "@/components/forms/MealForm";
 import { AnalyzeMeal } from "@/components/forms/AnalyzeMeal";
 import { BottomNav } from "@/components/BottomNav";
+import { HealthSyncCard } from "@/components/HealthSyncCard";
 import { favoriteCalories, type Favorite } from "@/lib/favorites";
 import { deleteFavorite, loadFavorites, logFavorite } from "@/lib/favorites-data";
 import { buildInsights } from "@/lib/reports/report";
@@ -226,6 +227,7 @@ export default function HomePage() {
   }, [userId, reloadKey]);
 
   const closeSheet = useCallback(() => setSheet(null), []);
+  const onHealthSynced = useCallback(() => setReloadKey((key) => key + 1), []);
   const onSaved = useCallback(() => {
     setSheet(null);
     setReloadKey((key) => key + 1);
@@ -514,6 +516,8 @@ export default function HomePage() {
             <p className="text-xs text-slate-500">לחיצה מוסיפה ליום שמוצג, בשעה הנוכחית. אפשר לערוך אחר כך מציר הזמן.</p>
           ) : null}
         </Card>
+
+        <HealthSyncCard userId={currentUserId} onSynced={onHealthSynced} />
 
         {insights.length > 0 ? (
           <Card>

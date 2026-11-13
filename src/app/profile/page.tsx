@@ -266,6 +266,22 @@ export default function ProfilePage() {
         ) : null}
       </form>
 
+      {!isOnboarding ? (
+        <Card className="space-y-2">
+          <h2 className="font-semibold">אפליקציית אנדרואיד</h2>
+          <p className="text-sm text-slate-600">
+            האפליקציה המותקנת מסנכרנת אימונים מ-Samsung Health דרך Health Connect. מורידים את קובץ ה-APK ומתקינים אותו
+            בטלפון.
+          </p>
+          <a
+            href="https://github.com/ariegaon/calorie-tracker/releases/download/android-latest/calorie-tracker.apk"
+            className="flex min-h-12 w-full items-center justify-center rounded-xl border border-slate-300 bg-white px-4 text-base font-semibold text-slate-800 hover:bg-slate-100"
+          >
+            הורדת האפליקציה (APK)
+          </a>
+        </Card>
+      ) : null}
+
       <div className="space-y-2 border-t border-slate-200 pt-4">
         <Button type="button" variant="dangerGhost" onClick={signOut}>
           התנתקות

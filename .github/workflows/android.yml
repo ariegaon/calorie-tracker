@@ -1,0 +1,102 @@
+name: Android APK
+
+# Builds the Android shell (Capacitor) and publishes the APK as the "android-latest" release.
+# The web app itself is served from Vercel, so this only needs to run when the shell changes.
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/android.yml"
+      - "capacitor.config.json"
+      - "capacitor-web/**"
+      - "scripts/prepare-android.mjs"
+      - "package.json"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: android-apk
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+
+      # The same debug key across builds lets a new APK install over the old one.
+      # If this cache is ever lost, the app has to be uninstalled once before installing the new APK.
+      - name: Restore signing key
+        uses: actions/cache@v4
+        with:
+          path: ~/.android/debug.keystore
+          key: android-debug-keystore-v1
+
+      - name: Create signing key if missing
+        run: |
+          mkdir -p ~/.android
+          if [ ! -f ~/.android/debug.keystore ]; then
+            keytool -genkeypair -v -keystore ~/.android/debug.keystore -storepass android -keypass android \
+              -alias androiddebugkey -keyalg RSA -keysize 2048 -validity 10000 \
+              -dname "CN=Android Debug,O=Android,C=US"
+          fi
+
+      - name: Build
+        id: build
+        run: |
+          set -o pipefail
+          {
+            npm install --no-audit --no-fund
+            npx cap add android
+            node scripts/prepare-android.mjs
+            npx cap sync android
+            cd android
+            chmod +x gradlew
+            ./gradlew assembleDebug --no-daemon --stacktrace
+          } 2>&1 | tee "$RUNNER_TEMP/build.log"
+
+      - name: Publish APK
+        if: success()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk calorie-tracker.apk
+          gh release delete android-latest --yes --cleanup-tag || true
+          gh release create android-latest calorie-tracker.apk \
+            --title "Android build ${{ github.run_number }}" \
+            --notes "Built from ${{ github.sha }}. Install calorie-tracker.apk on the phone." \
+            --target "${{ github.sha }}"
+
+      # The build log is kept on a branch so a failed build can be diagnosed without opening Actions.
+      - name: Save build log
+        if: always()
+        run: |
+          status="${{ steps.build.outcome }}"
+          mkdir -p "$RUNNER_TEMP/logs"
+          cd "$RUNNER_TEMP/logs"
+          git init -q
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          {
+            echo "run: ${{ github.run_number }}"
+            echo "commit: ${{ github.sha }}"
+            echo "build: $status"
+            echo "job: ${{ job.status }}"
+            date -u +"time: %Y-%m-%dT%H:%M:%SZ"
+          } > status.txt
+          tail -n 400 "$RUNNER_TEMP/build.log" > android-build.log 2>/dev/null || echo "no build log" > android-build.log
+          git add -A
+          git commit -q -m "Android build log for run ${{ github.run_number }}"
+          git push -q --force "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" HEAD:ci-logs
