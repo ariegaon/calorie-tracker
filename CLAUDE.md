@@ -9,7 +9,7 @@
 - **Stack:** Next.js (App Router) + TypeScript + Tailwind, Supabase (Auth, Postgres, Storage), Vercel.
 - **אנדרואיד:** מעטפת Capacitor עם Health Connect (במקום Strava כמקור פעילויות ראשי).
   Samsung Health בטלפון (Galaxy S23 Ultra + Galaxy Watch) כותב ל-Health Connect, והאפליקציה קוראת משם
-  ושומרת ב-Supabase. Strava אופציונלי, בשלב האחרון.
+  ושומרת ב-Supabase. אין חיבור ל-API של Strava (הוחלט 13.11.2026): אימוני Strava מגיעים דרך Health Connect.
 - **תחזית משקל:** בנוסף לסוף חודש ולמועד הגעה ליעד — תחזית לתאריך חופשי שהמשתמש בוחר.
 - **עבודה מהטלפון בלבד:** למשתמש אין Android Studio. בנייה ובדיקות רצות ב-GitHub Actions,
   פריסה ב-Vercel, ה-APK יורד מ-GitHub.
