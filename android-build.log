@@ -1,0 +1,217 @@
+
+added 157 packages in 15s
+✔ Adding native android project in android in 40.01ms
+✔ add in 40.72ms
+✔ Copying web assets from capacitor-web to android/app/src/main/assets/public in 2.47ms
+✔ Creating capacitor.config.json in android/app/src/main/assets in 395.16μs
+✔ copy android in 13.04ms
+✔ Updating Android plugins in 2.46ms
+[info] Found 1 Capacitor plugin for android:
+       @capgo/capacitor-health@8.12.4
+✔ update android in 20.62ms
+✔ Syncing Gradle in 207.72μs
+[success] android platform added!
+Follow the Developer Workflow guide to get building:
+https://capacitorjs.com/docs/basics/workflow
+updated   android/variables.gradle
+updated   android/app/src/main/AndroidManifest.xml
+updated   android/app/src/main/res/values/strings.xml
+updated   android/app/build.gradle
+✔ Copying web assets from capacitor-web to android/app/src/main/assets/public in 4.45ms
+✔ Creating capacitor.config.json in android/app/src/main/assets in 559.08μs
+✔ copy android in 16.07ms
+✔ Updating Android plugins in 2.18ms
+[info] Found 1 Capacitor plugin for android:
+       @capgo/capacitor-health@8.12.4
+✔ update android in 28.92ms
+[info] Sync finished in 0.065s
+Downloading https://services.gradle.org/distributions/gradle-8.14.3-all.zip
+.....................10%.....................20%......................30%.....................40%......................50%.....................60%.....................70%......................80%.....................90%......................100%
+
+Welcome to Gradle 8.14.3!
+
+Here are the highlights of this release:
+ - Java 24 support
+ - GraalVM Native Image toolchain selection
+ - Enhancements to test reporting
+ - Build Authoring improvements
+
+For more details see https://docs.gradle.org/8.14.3/release-notes.html
+
+To honour the JVM settings for this build a single-use Daemon process will be forked. For more on this, please refer to https://docs.gradle.org/8.14.3/userguide/gradle_daemon.html#sec:disabling_the_daemon in the Gradle documentation.
+Daemon will be stopped at the end of the build 
+
+> Configure project :app
+WARNING: Using flatDir should be avoided because it doesn't support any meta-data formats.
+
+> Configure project :capacitor-cordova-android-plugins
+WARNING: Using flatDir should be avoided because it doesn't support any meta-data formats.
+
+> Task :app:preBuild UP-TO-DATE
+> Task :app:preDebugBuild UP-TO-DATE
+> Task :app:mergeDebugNativeDebugMetadata NO-SOURCE
+> Task :capacitor-android:preBuild UP-TO-DATE
+> Task :capacitor-android:preDebugBuild UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:preBuild UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:preDebugBuild UP-TO-DATE
+> Task :capgo-capacitor-health:preBuild UP-TO-DATE
+> Task :capgo-capacitor-health:preDebugBuild UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:writeDebugAarMetadata
+> Task :capacitor-android:writeDebugAarMetadata
+> Task :app:javaPreCompileDebug
+> Task :capgo-capacitor-health:writeDebugAarMetadata
+> Task :capacitor-android:processDebugNavigationResources
+> Task :capacitor-cordova-android-plugins:processDebugNavigationResources
+> Task :app:checkDebugAarMetadata
+> Task :capgo-capacitor-health:processDebugNavigationResources
+> Task :app:processDebugNavigationResources
+> Task :app:generateDebugResValues
+> Task :capacitor-android:generateDebugResValues
+> Task :app:compileDebugNavigationResources
+> Task :capacitor-android:generateDebugResources
+> Task :capacitor-android:packageDebugResources
+> Task :capacitor-cordova-android-plugins:generateDebugResValues
+> Task :capacitor-cordova-android-plugins:generateDebugResources
+> Task :capacitor-cordova-android-plugins:packageDebugResources
+> Task :capgo-capacitor-health:generateDebugResValues
+> Task :capgo-capacitor-health:generateDebugResources
+> Task :capgo-capacitor-health:packageDebugResources
+> Task :app:mapDebugSourceSetPaths
+> Task :app:generateDebugResources
+> Task :app:packageDebugResources
+> Task :app:mergeDebugResources
+> Task :app:createDebugCompatibleScreenManifests
+> Task :app:extractDeepLinksDebug
+> Task :capacitor-android:extractDeepLinksDebug
+> Task :capacitor-cordova-android-plugins:extractDeepLinksDebug
+> Task :capgo-capacitor-health:extractDeepLinksDebug
+> Task :app:parseDebugLocalResources
+> Task :capacitor-android:compileDebugLibraryResources
+> Task :capgo-capacitor-health:processDebugManifest
+> Task :capacitor-android:processDebugManifest
+> Task :capacitor-cordova-android-plugins:processDebugManifest
+> Task :capacitor-android:parseDebugLocalResources
+> Task :capacitor-cordova-android-plugins:compileDebugLibraryResources
+> Task :app:processDebugMainManifest
+> Task :app:processDebugManifest
+> Task :app:processDebugManifestForPackage
+> Task :capgo-capacitor-health:compileDebugLibraryResources
+> Task :capacitor-android:javaPreCompileDebug
+> Task :capacitor-cordova-android-plugins:parseDebugLocalResources
+> Task :capacitor-cordova-android-plugins:javaPreCompileDebug
+> Task :capgo-capacitor-health:parseDebugLocalResources
+> Task :capacitor-android:generateDebugRFile
+> Task :capacitor-cordova-android-plugins:generateDebugRFile
+> Task :capgo-capacitor-health:generateDebugRFile
+
+> Task :capacitor-android:compileDebugJavaWithJavac
+Note: Some input files use unchecked or unsafe operations.
+Note: Recompile with -Xlint:unchecked for details.
+
+> Task :capacitor-cordova-android-plugins:compileDebugJavaWithJavac NO-SOURCE
+> Task :capgo-capacitor-health:checkKotlinGradlePluginConfigurationErrors SKIPPED
+> Task :capacitor-cordova-android-plugins:bundleLibCompileToJarDebug
+> Task :capgo-capacitor-health:javaPreCompileDebug
+> Task :capacitor-android:bundleLibCompileToJarDebug
+> Task :app:mergeDebugShaders
+> Task :app:processDebugResources
+> Task :app:compileDebugShaders NO-SOURCE
+> Task :app:generateDebugAssets UP-TO-DATE
+> Task :capacitor-android:mergeDebugShaders
+> Task :capacitor-android:compileDebugShaders NO-SOURCE
+> Task :capacitor-android:generateDebugAssets UP-TO-DATE
+> Task :capacitor-android:mergeDebugAssets
+> Task :capacitor-cordova-android-plugins:mergeDebugShaders
+> Task :capacitor-cordova-android-plugins:compileDebugShaders NO-SOURCE
+> Task :capacitor-cordova-android-plugins:generateDebugAssets UP-TO-DATE
+> Task :capacitor-cordova-android-plugins:mergeDebugAssets
+> Task :capgo-capacitor-health:mergeDebugShaders
+> Task :capgo-capacitor-health:compileDebugShaders NO-SOURCE
+> Task :capgo-capacitor-health:generateDebugAssets UP-TO-DATE
+> Task :capgo-capacitor-health:mergeDebugAssets
+> Task :app:mergeDebugAssets
+> Task :capacitor-cordova-android-plugins:bundleLibRuntimeToJarDebug
+> Task :app:compressDebugAssets
+> Task :capacitor-android:bundleLibRuntimeToJarDebug
+> Task :app:desugarDebugFileDependencies
+> Task :app:processDebugJavaRes NO-SOURCE
+> Task :capacitor-android:processDebugJavaRes NO-SOURCE
+> Task :capacitor-cordova-android-plugins:processDebugJavaRes NO-SOURCE
+> Task :app:checkDebugDuplicateClasses
+> Task :capacitor-android:bundleLibRuntimeToDirDebug
+> Task :capgo-capacitor-health:compileDebugKotlin
+> Task :app:mergeExtDexDebug
+> Task :capgo-capacitor-health:compileDebugJavaWithJavac NO-SOURCE
+> Task :capgo-capacitor-health:bundleLibCompileToJarDebug
+> Task :capgo-capacitor-health:bundleLibRuntimeToJarDebug
+> Task :capgo-capacitor-health:processDebugJavaRes
+> Task :app:compileDebugJavaWithJavac
+> Task :app:dexBuilderDebug
+> Task :app:mergeDebugGlobalSynthetics
+> Task :capacitor-cordova-android-plugins:bundleLibRuntimeToDirDebug
+> Task :capgo-capacitor-health:bundleLibRuntimeToDirDebug
+> Task :app:mergeProjectDexDebug
+> Task :app:mergeDebugJniLibFolders
+> Task :capacitor-android:mergeDebugJniLibFolders
+> Task :capacitor-android:mergeDebugNativeLibs NO-SOURCE
+> Task :capacitor-android:copyDebugJniLibsProjectOnly
+> Task :capacitor-cordova-android-plugins:mergeDebugJniLibFolders
+> Task :capacitor-cordova-android-plugins:mergeDebugNativeLibs NO-SOURCE
+> Task :capacitor-cordova-android-plugins:copyDebugJniLibsProjectOnly
+> Task :capgo-capacitor-health:mergeDebugJniLibFolders
+> Task :capgo-capacitor-health:mergeDebugNativeLibs NO-SOURCE
+> Task :capgo-capacitor-health:copyDebugJniLibsProjectOnly
+> Task :app:mergeDebugNativeLibs NO-SOURCE
+> Task :app:stripDebugDebugSymbols NO-SOURCE
+> Task :app:mergeDebugJavaResource
+> Task :app:validateSigningDebug
+> Task :app:writeDebugAppMetadata
+> Task :app:writeDebugSigningConfigVersions
+> Task :app:mergeLibDexDebug
+> Task :capacitor-android:checkDebugAarMetadata
+> Task :capacitor-android:stripDebugDebugSymbols NO-SOURCE
+> Task :capacitor-android:copyDebugJniLibsProjectAndLocalJars
+> Task :capacitor-android:extractDebugAnnotations
+> Task :capacitor-android:extractDeepLinksForAarDebug
+> Task :capacitor-android:mergeDebugGeneratedProguardFiles
+> Task :capacitor-android:mergeDebugConsumerProguardFiles
+> Task :capacitor-android:prepareDebugArtProfile
+> Task :capacitor-android:prepareLintJarForPublish
+> Task :app:packageDebug
+> Task :app:createDebugApkListingFileRedirect
+> Task :app:assembleDebug
+> Task :capacitor-android:mergeDebugJavaResource
+> Task :capacitor-cordova-android-plugins:checkDebugAarMetadata
+> Task :capacitor-android:syncDebugLibJars
+> Task :capacitor-android:bundleDebugAar
+> Task :capacitor-android:assembleDebug
+> Task :capacitor-cordova-android-plugins:stripDebugDebugSymbols NO-SOURCE
+> Task :capacitor-cordova-android-plugins:copyDebugJniLibsProjectAndLocalJars
+> Task :capacitor-cordova-android-plugins:extractDebugAnnotations
+> Task :capacitor-cordova-android-plugins:extractDeepLinksForAarDebug
+> Task :capacitor-cordova-android-plugins:mergeDebugGeneratedProguardFiles
+> Task :capacitor-cordova-android-plugins:mergeDebugConsumerProguardFiles
+> Task :capacitor-cordova-android-plugins:prepareDebugArtProfile
+> Task :capacitor-cordova-android-plugins:prepareLintJarForPublish
+> Task :capacitor-cordova-android-plugins:mergeDebugJavaResource
+> Task :capgo-capacitor-health:checkDebugAarMetadata
+> Task :capacitor-cordova-android-plugins:syncDebugLibJars
+> Task :capacitor-cordova-android-plugins:bundleDebugAar
+> Task :capacitor-cordova-android-plugins:assembleDebug
+> Task :capgo-capacitor-health:stripDebugDebugSymbols NO-SOURCE
+> Task :capgo-capacitor-health:copyDebugJniLibsProjectAndLocalJars
+> Task :capgo-capacitor-health:extractDebugAnnotations
+> Task :capgo-capacitor-health:extractDeepLinksForAarDebug
+> Task :capgo-capacitor-health:mergeDebugGeneratedProguardFiles
+> Task :capgo-capacitor-health:mergeDebugConsumerProguardFiles
+> Task :capgo-capacitor-health:prepareDebugArtProfile
+> Task :capgo-capacitor-health:prepareLintJarForPublish
+> Task :capgo-capacitor-health:mergeDebugJavaResource
+> Task :capgo-capacitor-health:syncDebugLibJars
+> Task :capgo-capacitor-health:bundleDebugAar
+> Task :capgo-capacitor-health:assembleDebug
+
+[Incubating] Problems report is available at: file:///home/runner/work/calorie-tracker/calorie-tracker/android/build/reports/problems/problems-report.html
+
+BUILD SUCCESSFUL in 1m 55s
+124 actionable tasks: 124 executed
