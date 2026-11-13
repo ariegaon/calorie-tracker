@@ -8,12 +8,21 @@ import { planSync, type ExistingActivity } from "@/lib/health/sync";
 const LOOKBACK_DAYS = 30;
 const MS_PER_DAY = 86_400_000;
 
-export type SyncResult = { inserted: number; manualDuplicates: number; alreadySynced: number };
+export type SyncResult = {
+  inserted: number;
+  manualDuplicates: number;
+  alreadySynced: number;
+  /** Records Health Connect returned for the period, and how many of them were usable. */
+  read: number;
+  usable: number;
+  sampleFields: string[];
+  lookbackDays: number;
+};
 
 export async function runHealthSync(userId: string): Promise<SyncResult> {
   const supabase = getSupabase();
   const since = new Date(Date.now() - LOOKBACK_DAYS * MS_PER_DAY);
-  const workouts = await readWorkouts(since);
+  const { workouts, rawCount, sampleFields } = await readWorkouts(since);
 
   const existing = await supabase
     .from("activities")
@@ -48,5 +57,9 @@ export async function runHealthSync(userId: string): Promise<SyncResult> {
     inserted: plan.toInsert.length,
     manualDuplicates: plan.manualDuplicateIds.length,
     alreadySynced: plan.alreadySynced,
+    read: rawCount,
+    usable: workouts.length,
+    sampleFields,
+    lookbackDays: LOOKBACK_DAYS,
   };
 }

@@ -28,7 +28,16 @@ function writeLastSync(time: number) {
 }
 
 function resultText(result: SyncResult): string {
-  if (result.inserted === 0) return "אין אימונים חדשים.";
+  if (result.read === 0) {
+    return (
+      `Health Connect לא החזיר אף אימון מ-${result.lookbackDays} הימים האחרונים. ` +
+      "כנראה ש-Samsung Health עוד לא העביר אליו את האימונים: פתח את Samsung Health, המתן לסיום הסנכרון עם השעון, ונסה שוב."
+    );
+  }
+  if (result.usable === 0) {
+    return `התקבלו ${result.read} רשומות מ-Health Connect, אבל אף אחת לא במבנה שהאפליקציה מכירה. שדות: ${result.sampleFields.join(", ")}`;
+  }
+  if (result.inserted === 0) return `אין אימונים חדשים. ${result.alreadySynced} אימונים מ-Health Connect כבר נמצאים ביומן.`;
   const added = result.inserted === 1 ? "נוסף אימון אחד" : `נוספו ${result.inserted} אימונים`;
   const duplicates =
     result.manualDuplicates === 0
@@ -144,7 +153,7 @@ export function HealthSyncCard({ userId, onSynced }: { userId: string; onSynced:
         </>
       )}
 
-      {message ? <Notice kind="success">{message}</Notice> : null}
+      {message ? <Notice kind="info">{message}</Notice> : null}
       {error ? (
         <>
           <Notice kind="error">{error}</Notice>

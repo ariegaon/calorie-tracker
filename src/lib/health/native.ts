@@ -94,10 +94,20 @@ export async function openHealthSettings(): Promise<void> {
 const PAGE_SIZE = 100;
 const MAX_PAGES = 5;
 
+export type WorkoutRead = {
+  workouts: HealthWorkout[];
+  /** How many records Health Connect returned, before unusable ones were skipped. */
+  rawCount: number;
+  /** Field names of the first record: shown when records arrive but none is usable. */
+  sampleFields: string[];
+};
+
 /** Workouts recorded since the given time, oldest first. Unusable records are skipped. */
-export async function readWorkouts(since: Date): Promise<HealthWorkout[]> {
+export async function readWorkouts(since: Date): Promise<WorkoutRead> {
   const { health } = await plugin();
   const workouts: HealthWorkout[] = [];
+  let rawCount = 0;
+  let sampleFields: string[] = [];
   let anchor: string | undefined;
   for (let page = 0; page < MAX_PAGES; page += 1) {
     const result = await withTimeout(
@@ -111,11 +121,13 @@ export async function readWorkouts(since: Date): Promise<HealthWorkout[]> {
       READ_TIMEOUT_MS,
     );
     for (const raw of result.workouts ?? []) {
+      rawCount += 1;
+      if (sampleFields.length === 0 && typeof raw === "object" && raw !== null) sampleFields = Object.keys(raw).slice(0, 20);
       const workout = parseWorkout(raw);
       if (workout) workouts.push(workout);
     }
     if (!result.anchor || (result.workouts ?? []).length < PAGE_SIZE) break;
     anchor = result.anchor;
   }
-  return workouts;
+  return { workouts, rawCount, sampleFields };
 }

@@ -56,8 +56,27 @@ test("duration falls back to the start and end times; bad values become null", (
   assert.equal(workout.sourceName, null);
 });
 
-test("workouts without an id or a valid start are rejected", () => {
-  assert.equal(parseWorkout({ ...rawRide, platformId: "" }), null);
+test("a workout without an id gets a stable one from its times and type", () => {
+  const first = parseWorkout({ ...rawRide, platformId: "" });
+  const again = parseWorkout({ ...rawRide, platformId: undefined });
+  assert.ok(first && again);
+  assert.match(first.platformId, /^generated:/);
+  assert.equal(first.platformId, again.platformId);
+  const other = parseWorkout({ ...rawRide, platformId: "", startDate: at(6, 0), endDate: at(7, 0) });
+  assert.notEqual(other?.platformId, first.platformId);
+});
+
+test("alternative field names from the plugin are understood", () => {
+  const workout = parseWorkout({ id: "abc", type: "running", startTime: at(6, 0), endTime: at(6, 30), calories: 300, distance: 5000 });
+  assert.ok(workout);
+  assert.equal(workout.platformId, "abc");
+  assert.equal(workout.workoutType, "running");
+  assert.equal(workout.durationSeconds, 1800);
+  assert.equal(workout.totalEnergyKcal, 300);
+  assert.equal(workout.distanceM, 5000);
+});
+
+test("workouts without a valid start are rejected", () => {
   assert.equal(parseWorkout({ ...rawRide, startDate: "soon" }), null);
   assert.equal(parseWorkout(null), null);
   assert.equal(parseWorkout("workout"), null);

@@ -42,27 +42,36 @@ function finite(value: unknown, max: number): number | null {
 export function parseWorkout(raw: unknown): HealthWorkout | null {
   if (typeof raw !== "object" || raw === null) return null;
   const record = raw as Record<string, unknown>;
-  const platformId = typeof record.platformId === "string" ? record.platformId.trim() : "";
-  const startDate = typeof record.startDate === "string" ? record.startDate : "";
-  const endDate = typeof record.endDate === "string" ? record.endDate : "";
+  const text = (...keys: string[]): string => {
+    for (const key of keys) {
+      const value = record[key];
+      if (typeof value === "string" && value.trim() !== "") return value.trim();
+    }
+    return "";
+  };
+  const startDate = text("startDate", "startTime", "start");
+  const endDate = text("endDate", "endTime", "end");
   const start = new Date(startDate).getTime();
-  if (platformId === "" || Number.isNaN(start)) return null;
+  if (Number.isNaN(start)) return null;
+  const workoutType = text("workoutType", "exerciseType", "type") || "other";
+  // Without an id from the source, the start, end and type identify the workout well enough to avoid duplicates.
+  const platformId = text("platformId", "id", "uuid") || `generated:${new Date(start).toISOString()}:${endDate}:${workoutType}`;
 
   const end = new Date(endDate).getTime();
   let duration = finite(record.duration, 86_400 * 2);
   if ((duration === null || duration === 0) && !Number.isNaN(end) && end > start) duration = (end - start) / 1000;
 
-  const energy = finite(record.totalEnergyBurned, 20_000);
-  const distance = finite(record.totalDistance, 1_000_000);
+  const energy = finite(record.totalEnergyBurned ?? record.calories ?? record.energy, 20_000);
+  const distance = finite(record.totalDistance ?? record.distance, 1_000_000);
   return {
     platformId: platformId.slice(0, 200),
-    workoutType: typeof record.workoutType === "string" ? record.workoutType : "other",
+    workoutType,
     startDate: new Date(start).toISOString(),
     endDate: Number.isNaN(end) ? new Date(start).toISOString() : new Date(end).toISOString(),
     durationSeconds: duration !== null && duration > 0 ? Math.round(duration) : null,
     totalEnergyKcal: energy !== null && energy > 0 ? Math.round(energy * 10) / 10 : null,
     distanceM: distance !== null && distance > 0 ? Math.round(distance * 10) / 10 : null,
-    sourceName: typeof record.sourceName === "string" && record.sourceName.trim() !== "" ? record.sourceName.trim().slice(0, 60) : null,
+    sourceName: text("sourceName", "sourceId").slice(0, 60) || null,
   };
 }
 
