@@ -84,7 +84,9 @@ export function HealthSyncCard({ userId, onSynced }: { userId: string; onSynced:
         }
       })
       .catch(() => {
-        if (!cancelled) setStatus({ state: "unavailable", reason: null });
+        if (cancelled) return;
+        setStatus({ state: "needs_permission" });
+        setError("לא הצלחנו לבדוק את החיבור ל-Health Connect. אפשר לנסות להתחבר בכפתור שלמטה.");
       });
     return () => {
       cancelled = true;

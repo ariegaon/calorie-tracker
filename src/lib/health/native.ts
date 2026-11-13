@@ -29,10 +29,35 @@ export function isNativeApp(): boolean {
   return bridge?.isNativePlatform?.() === true;
 }
 
-async function plugin(): Promise<HealthPlugin> {
+/**
+ * Loads the plugin. It is returned inside an object on purpose: a Capacitor plugin is a proxy that
+ * answers every property, including "then", so returning it directly from an async function makes
+ * the promise wait forever on a native method that does not exist.
+ */
+async function plugin(): Promise<{ health: HealthPlugin }> {
   const loaded = await import("@capgo/capacitor-health");
-  return loaded.Health as unknown as HealthPlugin;
+  return { health: loaded.Health as unknown as HealthPlugin };
 }
+
+/** Rejects when a native call does not answer in time, so the screen never waits forever. */
+function withTimeout<T>(promise: Promise<T>, milliseconds: number): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error("health plugin timeout")), milliseconds);
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error) => {
+        clearTimeout(timer);
+        reject(error);
+      },
+    );
+  });
+}
+
+const STATUS_TIMEOUT_MS = 12_000;
+const READ_TIMEOUT_MS = 30_000;
 
 export type HealthStatus =
   | { state: "unavailable"; reason: string | null }
@@ -41,16 +66,16 @@ export type HealthStatus =
 
 export async function healthStatus(): Promise<HealthStatus> {
   if (!isNativeApp()) return { state: "unavailable", reason: null };
-  const health = await plugin();
-  const availability = await health.isAvailable();
+  const { health } = await plugin();
+  const availability = await withTimeout(health.isAvailable(), STATUS_TIMEOUT_MS);
   if (!availability.available) return { state: "unavailable", reason: availability.reason ?? null };
-  const status = await health.checkAuthorization({ read: [WORKOUTS] });
+  const status = await withTimeout(health.checkAuthorization({ read: [WORKOUTS] }), STATUS_TIMEOUT_MS);
   return status.readAuthorized?.includes(WORKOUTS) ? { state: "ready" } : { state: "needs_permission" };
 }
 
 /** Opens the Health Connect permission sheet. Returns whether workouts can now be read. */
 export async function requestHealthAccess(): Promise<boolean> {
-  const health = await plugin();
+  const { health } = await plugin();
   let status: { readAuthorized?: string[] };
   try {
     status = await health.requestAuthorization({ read: [WORKOUTS, ...EXTRA_READ_TYPES] });
@@ -62,7 +87,7 @@ export async function requestHealthAccess(): Promise<boolean> {
 }
 
 export async function openHealthSettings(): Promise<void> {
-  const health = await plugin();
+  const { health } = await plugin();
   await health.openHealthConnectSettings();
 }
 
@@ -71,17 +96,20 @@ const MAX_PAGES = 5;
 
 /** Workouts recorded since the given time, oldest first. Unusable records are skipped. */
 export async function readWorkouts(since: Date): Promise<HealthWorkout[]> {
-  const health = await plugin();
+  const { health } = await plugin();
   const workouts: HealthWorkout[] = [];
   let anchor: string | undefined;
   for (let page = 0; page < MAX_PAGES; page += 1) {
-    const result = await health.queryWorkouts({
-      startDate: since.toISOString(),
-      endDate: new Date().toISOString(),
-      limit: PAGE_SIZE,
-      ascending: true,
-      ...(anchor ? { anchor } : {}),
-    });
+    const result = await withTimeout(
+      health.queryWorkouts({
+        startDate: since.toISOString(),
+        endDate: new Date().toISOString(),
+        limit: PAGE_SIZE,
+        ascending: true,
+        ...(anchor ? { anchor } : {}),
+      }),
+      READ_TIMEOUT_MS,
+    );
     for (const raw of result.workouts ?? []) {
       const workout = parseWorkout(raw);
       if (workout) workouts.push(workout);
