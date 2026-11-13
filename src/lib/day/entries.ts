@@ -80,6 +80,23 @@ export const MEAL_TYPE_LABELS: Record<MealType, string> = {
 
 export const ACTIVITY_TYPES = ["ריצה", "הליכה", "רכיבה", "אימון כוח", "CrossFit", "שחייה", "אחר"] as const;
 
+const ACTIVITY_ICONS: [RegExp, string][] = [
+  [/רכיב|אופני|cycl|bik|ride/i, "🚴"],
+  [/ריצ|run|jog/i, "🏃"],
+  [/הליכ|צעיד|walk|hik/i, "🚶"],
+  [/שחי|swim/i, "🏊"],
+  [/כוח|משקולות|crossfit|strength|weight|gym/i, "🏋"],
+  [/יוגה|פילאטיס|yoga|pilates|stretch/i, "🧘"],
+];
+
+/** Icon for an activity type. Matches by keyword, so names from synced sources work too. */
+export function activityIcon(activityType: string): string {
+  for (const [pattern, icon] of ACTIVITY_ICONS) {
+    if (pattern.test(activityType)) return icon;
+  }
+  return "🤸";
+}
+
 export const WEIGHT_CONDITIONS = ["בוקר, לפני אוכל", "אחרי אימון", "ערב", "אחר"] as const;
 
 export type DrinkPreset = {

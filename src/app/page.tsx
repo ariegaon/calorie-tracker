@@ -10,7 +10,7 @@ import { loadCalibrationAdjustment } from "@/lib/weight/extras-data";
 import { addDays, defaultEntryTime, formatDayLabel, formatTime, isSameDay, startOfDay } from "@/lib/day/dates";
 import { loadDay, saveDrink, type LoadedDay } from "@/lib/day/data";
 import { buildTimeline, summarizeDay, type TimelineEvent, type TimelineKind } from "@/lib/day/summary";
-import type { ActivityRow, DrinkRow, FoodRow, WeightRow } from "@/lib/day/entries";
+import { activityIcon, type ActivityRow, type DrinkRow, type FoodRow, type WeightRow } from "@/lib/day/entries";
 import { Card, FullPageMessage, Notice } from "@/components/ui";
 import { Sheet } from "@/components/Sheet";
 import { FoodForm } from "@/components/forms/FoodForm";
@@ -129,11 +129,11 @@ function TimelineItem({ event, onOpen }: { event: TimelineEvent; onOpen: () => v
       >
         <span className="w-11 shrink-0 text-sm tabular-nums text-slate-500">{formatTime(event.at)}</span>
         <span aria-hidden="true" className="shrink-0 text-xl">
-          {KIND_ICON[event.kind]}
+          {event.kind === "activity" ? activityIcon(event.title) : KIND_ICON[event.kind]}
         </span>
         <span className="min-w-0 flex-1">
           <span className="block truncate font-medium">{event.title}</span>
-          {event.detail ? <span className="block truncate text-xs text-slate-500">{event.detail}</span> : null}
+          {event.detail ? <span className="block text-xs text-slate-500">{event.detail}</span> : null}
         </span>
         {kcalText}
       </button>

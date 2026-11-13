@@ -10,6 +10,7 @@ import {
   toLocalInputValue,
 } from "./dates.ts";
 import {
+  activityIcon,
   validateActivity,
   validateDrink,
   validateFood,
@@ -342,4 +343,20 @@ test("protein from drinks counts toward the day's protein", () => {
   assert.equal(summary.drinkKcal, 230);
   const shake = buildTimeline(withShake, 1780).find((event) => event.key === "drink-d3");
   assert.match(shake?.detail ?? "", /24 גרם חלבון/);
+});
+
+test("each activity type gets its own icon, with a neutral fallback", () => {
+  assert.equal(activityIcon("רכיבה"), "🚴");
+  assert.equal(activityIcon("ריצה"), "🏃");
+  assert.equal(activityIcon("הליכה"), "🚶");
+  assert.equal(activityIcon("שחייה"), "🏊");
+  assert.equal(activityIcon("אימון כוח"), "🏋");
+  assert.equal(activityIcon("CrossFit"), "🏋");
+  assert.equal(activityIcon("Cycling"), "🚴");
+  assert.equal(activityIcon("Running"), "🏃");
+  assert.equal(activityIcon("אחר"), "🤸");
+  // Every built-in type other than "אחר" has a specific icon.
+  for (const type of ["ריצה", "הליכה", "רכיבה", "אימון כוח", "CrossFit", "שחייה"]) {
+    assert.notEqual(activityIcon(type), "🤸", type);
+  }
 });
