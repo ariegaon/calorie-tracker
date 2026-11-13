@@ -1,6 +1,16 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { activityTypeLabel, isSameWorkout, parseWorkout, planSync, workoutToActivity, type ExistingActivity } from "./sync.ts";
+import {
+  activityTypeLabel,
+  isSameWorkout,
+  parseWorkout,
+  planNewActivities,
+  planSync,
+  sourceRank,
+  stravaToActivity,
+  workoutToActivity,
+  type ExistingActivity,
+} from "./sync.ts";
 import { activityIcon } from "../day/entries.ts";
 import { activeCaloriesForActivity } from "../calculations/energy.ts";
 
@@ -128,8 +138,9 @@ test("first sync inserts the workout and stops counting the manual entry of the 
   const morningRun = parseWorkout({ ...rawRide, platformId: "hc-run-1", workoutType: "running", startDate: at(6, 30), endDate: at(7, 10), duration: 2400 });
   assert.ok(ride && morningRun);
   const plan = planSync([ride, morningRun], [manualRide]);
-  assert.deepEqual(plan.toInsert.map((row) => row.external_activity_id), ["hc-ride-1", "hc-run-1"]);
-  assert.deepEqual(plan.manualDuplicateIds, ["manual-1"]);
+  assert.deepEqual(plan.toInsert.map((row) => row.external_activity_id), ["hc-run-1", "hc-ride-1"]); // oldest first
+  assert.deepEqual(plan.toInsert.map((row) => row.excluded_from_balance), [false, false]);
+  assert.deepEqual(plan.excludeIds, ["manual-1"]);
   assert.equal(plan.alreadySynced, 0);
 });
 
@@ -142,7 +153,7 @@ test("a second sync inserts nothing and changes nothing", () => {
   ];
   const plan = planSync([ride, ride], stored);
   assert.deepEqual(plan.toInsert, []);
-  assert.deepEqual(plan.manualDuplicateIds, []);
+  assert.deepEqual(plan.excludeIds, []);
   assert.equal(plan.alreadySynced, 2);
 });
 
@@ -155,7 +166,7 @@ test("the user's choice to count the manual entry instead is respected", () => {
     { id: "s1", started_at: at(12, 50), duration_seconds: 9420, external_provider: "health_connect", external_activity_id: "hc-ride-1", excluded_from_balance: true },
   ];
   const plan = planSync([ride], stored);
-  assert.deepEqual(plan.manualDuplicateIds, []);
+  assert.deepEqual(plan.excludeIds, []);
 });
 
 test("unrelated manual activities are left alone, and repeated ids in one batch insert once", () => {
@@ -164,5 +175,138 @@ test("unrelated manual activities are left alone, and repeated ids in one batch 
   const gym: ExistingActivity = { ...manualRide, id: "manual-gym", started_at: at(19, 0), duration_seconds: 3600 };
   const plan = planSync([ride, ride], [gym]);
   assert.equal(plan.toInsert.length, 1);
-  assert.deepEqual(plan.manualDuplicateIds, []);
+  assert.deepEqual(plan.excludeIds, []);
+});
+
+// ------------------------------------------------------------------ Strava and several sources
+
+const stravaRide = {
+  id: 9876543210,
+  name: "רכיבת בוקר",
+  sport_type: "Ride",
+  start_date: at(12, 50),
+  elapsed_time: 9420,
+  moving_time: 9000,
+  distance: 41800.4,
+  calories: 1490.2,
+  device_name: "Samsung Health",
+};
+
+test("a Strava activity becomes an activity row with total calories", () => {
+  const row = stravaToActivity(stravaRide);
+  assert.deepEqual(row, {
+    external_provider: "strava",
+    external_activity_id: "9876543210",
+    source_app: "Samsung Health",
+    activity_type: "רכיבה",
+    started_at: at(12, 50),
+    duration_seconds: 9420,
+    distance_m: 41800.4,
+    calories_active_kcal: null,
+    calories_total_kcal: 1490.2,
+    calories_source: "external",
+    notes: "Strava: רכיבת בוקר",
+  });
+});
+
+test("Strava sport types and missing fields are handled", () => {
+  assert.equal(stravaToActivity({ ...stravaRide, sport_type: "TrailRun" })?.activity_type, "ריצה");
+  assert.equal(stravaToActivity({ ...stravaRide, sport_type: "WeightTraining" })?.activity_type, "אימון כוח");
+  assert.equal(stravaToActivity({ ...stravaRide, sport_type: "MountainBikeRide" })?.activity_type, "רכיבה");
+  const powerRide = stravaToActivity({ ...stravaRide, calories: undefined, kilojoules: 1210 });
+  assert.equal(powerRide?.calories_total_kcal, 1210);
+  const bare = stravaToActivity({ id: "5", start_date: at(8, 0), type: "Walk" });
+  assert.ok(bare);
+  assert.equal(bare.activity_type, "הליכה");
+  assert.equal(bare.calories_total_kcal, null);
+  assert.equal(bare.duration_seconds, null);
+  assert.equal(bare.source_app, "Strava");
+  assert.equal(stravaToActivity({ start_date: at(8, 0) }), null);
+  assert.equal(stravaToActivity({ id: 1, start_date: "x" }), null);
+  assert.equal(stravaToActivity(null), null);
+});
+
+test("source ranks: watch app over Strava over Strava's own Health Connect copy over manual", () => {
+  assert.equal(sourceRank({ external_provider: null }), 0);
+  assert.equal(sourceRank({ external_provider: "health_connect", source_app: "com.strava" }), 1);
+  assert.equal(sourceRank({ external_provider: "strava", source_app: "Samsung Health" }), 2);
+  assert.equal(sourceRank({ external_provider: "health_connect", source_app: "Samsung Health" }), 3);
+  assert.equal(sourceRank({ external_provider: "health_connect", source_app: null }), 3);
+});
+
+function stored(id: string, provider: string | null, sourceApp: string | null, excluded = false): ExistingActivity {
+  return {
+    id,
+    started_at: at(12, 50),
+    duration_seconds: 9420,
+    external_provider: provider,
+    external_activity_id: provider ? `ext-${id}` : null,
+    source_app: sourceApp,
+    excluded_from_balance: excluded,
+  };
+}
+
+test("a watch workout already synced from Health Connect: its Strava copy arrives uncounted", () => {
+  const candidate = stravaToActivity(stravaRide);
+  assert.ok(candidate);
+  const plan = planNewActivities([candidate], [stored("hc", "health_connect", "Samsung Health")]);
+  assert.equal(plan.toInsert.length, 1);
+  assert.equal(plan.toInsert[0].excluded_from_balance, true);
+  assert.deepEqual(plan.excludeIds, []);
+});
+
+test("the Strava copy came first: the Health Connect original takes over when it arrives", () => {
+  const ride = parseWorkout(rawRide);
+  assert.ok(ride);
+  const plan = planSync([ride], [stored("st", "strava", "Samsung Health"), stored("man", null, null)]);
+  assert.equal(plan.toInsert[0].excluded_from_balance, false);
+  assert.deepEqual(plan.excludeIds.sort(), ["man", "st"]);
+});
+
+test("a workout started in Strava counts from Strava, not from the copy Strava wrote to Health Connect", () => {
+  const stravaCopy = parseWorkout({ ...rawRide, platformId: "hc-from-strava", sourceName: "com.strava" });
+  const candidate = stravaToActivity({ ...stravaRide, device_name: "Strava Android App" });
+  assert.ok(stravaCopy && candidate);
+
+  // Strava first, then its Health Connect copy.
+  const later = planSync([stravaCopy], [stored("st", "strava", "Strava Android App")]);
+  assert.equal(later.toInsert[0].excluded_from_balance, true);
+  assert.deepEqual(later.excludeIds, []);
+
+  // Health Connect copy first, then Strava.
+  const earlier = planNewActivities([candidate], [stored("hc", "health_connect", "com.strava")]);
+  assert.equal(earlier.toInsert[0].excluded_from_balance, false);
+  assert.deepEqual(earlier.excludeIds, ["hc"]);
+});
+
+test("both copies arriving in one batch still count once", () => {
+  const ride = workoutToActivity(parseWorkout(rawRide)!);
+  const copy = stravaToActivity(stravaRide)!;
+  const plan = planNewActivities([copy, ride], []);
+  assert.equal(plan.toInsert.length, 2);
+  const countedRows = plan.toInsert.filter((row) => !row.excluded_from_balance);
+  assert.equal(countedRows.length, 1);
+  assert.equal(countedRows[0].external_provider, "health_connect");
+});
+
+test("a Strava-only workout counts, and replaces a manual entry of it", () => {
+  const candidate = stravaToActivity({ ...stravaRide, device_name: "Garmin Edge 840" });
+  assert.ok(candidate);
+  const plan = planNewActivities([candidate], [stored("man", null, null)]);
+  assert.equal(plan.toInsert[0].excluded_from_balance, false);
+  assert.deepEqual(plan.excludeIds, ["man"]);
+});
+
+test("a later sync never overrides the user's manual choice between copies", () => {
+  const candidate = stravaToActivity(stravaRide);
+  assert.ok(candidate);
+  // The user chose to count the Strava copy and excluded the Health Connect one. Nothing new arrives.
+  const existing = [
+    { ...stored("st", "strava", "Samsung Health"), external_activity_id: "9876543210" },
+    stored("hc", "health_connect", "Samsung Health", true),
+  ];
+  const plan = planNewActivities([candidate], existing);
+  assert.deepEqual(plan.toInsert, []);
+  assert.deepEqual(plan.excludeIds, []);
+  assert.equal(plan.alreadySynced, 1);
 });

@@ -39,13 +39,17 @@ function resultText(result: SyncResult): string {
   }
   if (result.inserted === 0) return `אין אימונים חדשים. ${result.alreadySynced} אימונים מ-Health Connect כבר נמצאים ביומן.`;
   const added = result.inserted === 1 ? "נוסף אימון אחד" : `נוספו ${result.inserted} אימונים`;
-  const duplicates =
-    result.manualDuplicates === 0
-      ? ""
-      : result.manualDuplicates === 1
-        ? " אימון אחד שהזנת ידנית זוהה ככפילות ולא נספר עוד במאזן."
-        : ` ${result.manualDuplicates} אימונים שהזנת ידנית זוהו ככפילות ולא נספרים עוד במאזן.`;
-  return `${added}.${duplicates}`;
+  const copies = result.inserted - result.counted;
+  const notes: string[] = [];
+  if (copies > 0) notes.push(`${copies} מהם הם עותק של אימון שכבר נספר, ולכן נשמרו בלי להיספר שוב`);
+  if (result.replaced > 0) {
+    notes.push(
+      result.replaced === 1
+        ? "רשומה אחת שכבר הייתה ביומן לאותו אימון הפסיקה להיספר, כדי שלא ייספר פעמיים"
+        : `${result.replaced} רשומות שכבר היו ביומן לאותם אימונים הפסיקו להיספר, כדי שלא ייספרו פעמיים`,
+    );
+  }
+  return `${added}.${notes.length > 0 ? ` ${notes.join(". ")}.` : ""}`;
 }
 
 /** Shown only inside the Android app: connects to Health Connect and syncs workouts from it. */
@@ -68,7 +72,7 @@ export function HealthSyncCard({ userId, onSynced }: { userId: string; onSynced:
       writeLastSync(now);
       setLastSync(now);
       setMessage(resultText(result));
-      if (result.inserted > 0 || result.manualDuplicates > 0) onSynced();
+      if (result.inserted > 0 || result.replaced > 0) onSynced();
     } catch {
       setError("הסנכרון נכשל. בדוק שיש חיבור לאינטרנט ושההרשאה ל-Health Connect עדיין בתוקף.");
     } finally {

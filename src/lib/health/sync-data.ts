@@ -10,7 +10,10 @@ const MS_PER_DAY = 86_400_000;
 
 export type SyncResult = {
   inserted: number;
-  manualDuplicates: number;
+  /** New workouts that count toward the balance. The rest arrived as copies of a workout that already counts. */
+  counted: number;
+  /** Activities already in the diary that stopped counting because a better source of the same workout arrived. */
+  replaced: number;
   alreadySynced: number;
   /** Records Health Connect returned for the period, and how many of them were usable. */
   read: number;
@@ -26,7 +29,7 @@ export async function runHealthSync(userId: string): Promise<SyncResult> {
 
   const existing = await supabase
     .from("activities")
-    .select("id, started_at, duration_seconds, external_provider, external_activity_id, excluded_from_balance")
+    .select("id, started_at, duration_seconds, external_provider, external_activity_id, source_app, excluded_from_balance")
     .eq("user_id", userId)
     .gte("started_at", new Date(since.getTime() - MS_PER_DAY).toISOString())
     .limit(3000);
@@ -45,17 +48,18 @@ export async function runHealthSync(userId: string): Promise<SyncResult> {
     if (inserted.error) throw new Error(inserted.error.message);
   }
 
-  if (plan.manualDuplicateIds.length > 0) {
+  if (plan.excludeIds.length > 0) {
     const updated = await supabase
       .from("activities")
       .update({ excluded_from_balance: true })
-      .in("id", plan.manualDuplicateIds);
+      .in("id", plan.excludeIds);
     if (updated.error) throw new Error(updated.error.message);
   }
 
   return {
     inserted: plan.toInsert.length,
-    manualDuplicates: plan.manualDuplicateIds.length,
+    counted: plan.toInsert.filter((row) => !row.excluded_from_balance).length,
+    replaced: plan.excludeIds.length,
     alreadySynced: plan.alreadySynced,
     read: rawCount,
     usable: workouts.length,

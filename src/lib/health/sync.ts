@@ -13,13 +13,13 @@ export type HealthWorkout = {
 };
 
 const TYPE_LABELS: [RegExp, string][] = [
-  [/cycl|bik/i, "רכיבה"],
+  [/cycl|bik|ride/i, "רכיבה"],
   [/run|jog/i, "ריצה"],
   [/walk/i, "הליכה"],
   [/hik/i, "הליכה"],
   [/swim/i, "שחייה"],
   [/crossfit|crosstraining|highintensity|hiit/i, "CrossFit"],
-  [/strength|weightlift|weight/i, "אימון כוח"],
+  [/strength|weightlift|weight|workout/i, "אימון כוח"],
   [/yoga/i, "יוגה"],
   [/pilates/i, "פילאטיס"],
 ];
@@ -76,8 +76,10 @@ export function parseWorkout(raw: unknown): HealthWorkout | null {
 }
 
 export type SyncedActivityInsert = {
-  external_provider: "health_connect";
+  external_provider: "health_connect" | "strava";
   external_activity_id: string;
+  /** The app that recorded the workout, as the source names it. */
+  source_app: string | null;
   activity_type: string;
   started_at: string;
   duration_seconds: number | null;
@@ -96,6 +98,7 @@ export function workoutToActivity(workout: HealthWorkout): SyncedActivityInsert 
   return {
     external_provider: "health_connect",
     external_activity_id: workout.platformId,
+    source_app: workout.sourceName,
     activity_type: activityTypeLabel(workout.workoutType),
     started_at: workout.startDate,
     duration_seconds: workout.durationSeconds,
@@ -113,6 +116,7 @@ export type ExistingActivity = {
   duration_seconds: number | null;
   external_provider: string | null;
   external_activity_id: string | null;
+  source_app?: string | null;
   excluded_from_balance: boolean;
 };
 
@@ -138,42 +142,124 @@ export function isSameWorkout(
   return shorter > 0 && overlap >= shorter / 2;
 }
 
+/**
+ * Which copy of a workout counts when it arrived from several sources. Higher wins.
+ *   3  Health Connect, recorded by a device app such as Samsung Health: the original measurement.
+ *   2  Strava: the original when the workout was started in Strava, a copy when Samsung Health uploaded it.
+ *   1  Health Connect record that Strava itself wrote: a copy of a Strava workout.
+ *   0  Typed in by hand.
+ * So a watch workout counts from Health Connect, a Strava-recorded workout counts from Strava,
+ * and a manual entry never counts next to a measured one.
+ */
+export function sourceRank(row: { external_provider: string | null; source_app?: string | null }): number {
+  if (row.external_provider === null) return 0;
+  if (row.external_provider === "strava") return 2;
+  if (row.external_provider === "health_connect") return /strava/i.test(row.source_app ?? "") ? 1 : 3;
+  return 1;
+}
+
+export type PlannedInsert = SyncedActivityInsert & { excluded_from_balance: boolean };
+
 export type SyncPlan = {
-  /** Workouts that are not in the database yet. */
-  toInsert: SyncedActivityInsert[];
+  /** Workouts that are not in the database yet. Copies of a workout that already counts arrive excluded. */
+  toInsert: PlannedInsert[];
   /**
-   * Manually typed activities that are the same workout as a synced one. They stay in the diary
-   * but stop counting toward the balance, so the workout is counted once, from the measured source.
+   * Activities already in the diary that are a lower-ranked copy of a newly arrived workout.
+   * They stay in the diary but stop counting toward the balance.
    */
-  manualDuplicateIds: string[];
+  excludeIds: string[];
   alreadySynced: number;
 };
 
-export function planSync(workouts: HealthWorkout[], existing: ExistingActivity[]): SyncPlan {
-  const known = new Set(
-    existing.filter((row) => row.external_provider === "health_connect").map((row) => row.external_activity_id),
-  );
-  const manual = existing.filter((row) => row.external_provider === null && !row.excluded_from_balance);
+type Counted = {
+  id: string | null;
+  started_at: string;
+  duration_seconds: number | null;
+  rank: number;
+  planned: PlannedInsert | null;
+};
 
-  const toInsert: SyncedActivityInsert[] = [];
-  const seen = new Set<string>();
+/**
+ * Decides what to insert and what to stop counting. Only newly arrived workouts trigger a decision,
+ * so a choice the user made by hand on existing activities is never overridden by a later sync.
+ */
+export function planNewActivities(candidates: SyncedActivityInsert[], existing: ExistingActivity[]): SyncPlan {
+  const known = new Set(
+    existing.filter((row) => row.external_provider !== null).map((row) => `${row.external_provider}:${row.external_activity_id}`),
+  );
+  let counted: Counted[] = existing
+    .filter((row) => !row.excluded_from_balance)
+    .map((row) => ({ id: row.id, started_at: row.started_at, duration_seconds: row.duration_seconds, rank: sourceRank(row), planned: null }));
+
+  const toInsert: PlannedInsert[] = [];
+  const excludeIds: string[] = [];
   let alreadySynced = 0;
-  for (const workout of workouts) {
-    if (known.has(workout.platformId)) {
+
+  const ordered = [...candidates].sort((a, b) => new Date(a.started_at).getTime() - new Date(b.started_at).getTime());
+  for (const candidate of ordered) {
+    const key = `${candidate.external_provider}:${candidate.external_activity_id}`;
+    if (known.has(key)) {
       alreadySynced += 1;
       continue;
     }
-    if (seen.has(workout.platformId)) continue;
-    seen.add(workout.platformId);
-    toInsert.push(workoutToActivity(workout));
+    known.add(key);
+
+    const rank = sourceRank(candidate);
+    const same = counted.filter((other) => isSameWorkout(candidate, other));
+    const planned: PlannedInsert = { ...candidate, excluded_from_balance: same.some((other) => other.rank >= rank) };
+    toInsert.push(planned);
+    if (planned.excluded_from_balance) continue;
+
+    // The newcomer counts: every lower-ranked copy of the same workout stops counting.
+    for (const other of same) {
+      if (other.id !== null) excludeIds.push(other.id);
+      if (other.planned) other.planned.excluded_from_balance = true;
+    }
+    counted = counted.filter((other) => !same.includes(other));
+    counted.push({ id: null, started_at: candidate.started_at, duration_seconds: candidate.duration_seconds, rank, planned });
   }
 
-  // A manual entry is a duplicate when it matches any synced workout, new or already stored.
-  const synced = [
-    ...toInsert.map((row) => ({ started_at: row.started_at, duration_seconds: row.duration_seconds })),
-    ...existing.filter((row) => row.external_provider === "health_connect" && !row.excluded_from_balance),
-  ];
-  const manualDuplicateIds = manual.filter((row) => synced.some((other) => isSameWorkout(row, other))).map((row) => row.id);
+  return { toInsert, excludeIds, alreadySynced };
+}
 
-  return { toInsert, manualDuplicateIds, alreadySynced };
+export function planSync(workouts: HealthWorkout[], existing: ExistingActivity[]): SyncPlan {
+  return planNewActivities(workouts.map(workoutToActivity), existing);
+}
+
+// ------------------------------------------------------------------ Strava
+
+/** Checks one activity object from the Strava API (summary fields, plus calories from the detail call). */
+export function stravaToActivity(raw: unknown): SyncedActivityInsert | null {
+  if (typeof raw !== "object" || raw === null) return null;
+  const record = raw as Record<string, unknown>;
+  const id = typeof record.id === "number" || typeof record.id === "string" ? String(record.id) : "";
+  const startDate = typeof record.start_date === "string" ? record.start_date : "";
+  const start = new Date(startDate).getTime();
+  if (id === "" || Number.isNaN(start)) return null;
+
+  const sport = typeof record.sport_type === "string" ? record.sport_type : typeof record.type === "string" ? record.type : "other";
+  const elapsed = finite(record.elapsed_time, 86_400 * 2);
+  const moving = finite(record.moving_time, 86_400 * 2);
+  const duration = elapsed !== null && elapsed > 0 ? elapsed : moving;
+  const calories = finite(record.calories, 20_000);
+  // Rides with a power meter report mechanical work in kilojoules, which is close to kilocalories burned.
+  const kilojoules = finite(record.kilojoules, 20_000);
+  const energy = calories !== null && calories > 0 ? calories : kilojoules !== null && kilojoules > 0 ? kilojoules : null;
+  const distance = finite(record.distance, 1_000_000);
+  const device = typeof record.device_name === "string" && record.device_name.trim() !== "" ? record.device_name.trim().slice(0, 60) : null;
+  const name = typeof record.name === "string" && record.name.trim() !== "" ? record.name.trim().slice(0, 80) : null;
+
+  return {
+    external_provider: "strava",
+    external_activity_id: id,
+    source_app: device ?? "Strava",
+    activity_type: activityTypeLabel(sport),
+    started_at: new Date(start).toISOString(),
+    duration_seconds: duration !== null && duration > 0 ? Math.round(duration) : null,
+    distance_m: distance !== null && distance > 0 ? Math.round(distance * 10) / 10 : null,
+    calories_active_kcal: null,
+    calories_total_kcal: energy === null ? null : Math.round(energy * 10) / 10,
+    calories_source: "external",
+    notes: name ? `Strava: ${name}` : "סונכרן מ-Strava",
+  };
 }
