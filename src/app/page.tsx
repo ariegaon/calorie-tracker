@@ -230,8 +230,21 @@ export default function HomePage() {
   const onHealthSynced = useCallback(() => setReloadKey((key) => key + 1), []);
   const onSaved = useCallback(() => {
     setSheet(null);
+    // Whatever was just saved or deleted makes an earlier "added" message out of date.
+    setActionNotice(null);
     setReloadKey((key) => key + 1);
   }, []);
+
+  // The "added" message is a brief confirmation: it goes away by itself, and when the day changes.
+  useEffect(() => {
+    if (actionNotice === null) return;
+    const timer = setTimeout(() => setActionNotice(null), 4000);
+    return () => clearTimeout(timer);
+  }, [actionNotice]);
+  useEffect(() => {
+    setActionNotice(null);
+    setActionError(null);
+  }, [day]);
 
   if (authError) return <Notice kind="error">{authError}</Notice>;
   if (authLoading || !userId) return <FullPageMessage>טוען…</FullPageMessage>;
