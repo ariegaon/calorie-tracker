@@ -470,3 +470,28 @@ test("an older row learns which app wrote it", () => {
   const stored = { ...storedCrossfit, activity_type: "רכיבה", calories_total_kcal: 1337.3, duration_seconds: 9420, distance_m: 41737, source_app: "samsung SM-S918B" };
   assert.deepEqual(repairFor(stored, workoutToActivity(stravaCopy)), { source_app: "com.strava" });
 });
+
+// ------------------------------------------------------------------ Apple Health
+
+test("an Apple Health workout is its own provider, with the watch's active energy counted as it is", () => {
+  const workout = parseWorkout({ ...rawRide, platformId: "hk-1", sourceName: "Apple Watch", sourceId: "com.apple.health" });
+  assert.ok(workout);
+  // HealthKit reports a workout's active energy, so it is passed as active and nothing is subtracted.
+  const row = workoutToActivity(workout, { provider: "apple_health", energy: { totalKcal: null, activeKcal: workout.totalEnergyKcal } });
+  assert.equal(row.external_provider, "apple_health");
+  assert.equal(row.calories_active_kcal, 1520.4);
+  assert.equal(row.calories_total_kcal, null);
+  assert.equal(sourceRank(row), 3);
+  assert.equal(sourceRank({ external_provider: "apple_health", source_app: "com.strava.stravaride" }), 1);
+});
+
+test("the same id from two providers is not mistaken for an already synced workout", () => {
+  const workout = parseWorkout({ ...rawRide, platformId: "shared-id" });
+  assert.ok(workout);
+  const existing: ExistingActivity[] = [
+    { id: "a", started_at: at(8, 0), duration_seconds: 600, external_provider: "health_connect", external_activity_id: "shared-id", excluded_from_balance: false },
+  ];
+  const plan = planNewActivities([workoutToActivity(workout, { provider: "apple_health" })], existing);
+  assert.equal(plan.toInsert.length, 1);
+  assert.equal(plan.alreadySynced, 0);
+});

@@ -30,11 +30,43 @@ const ACTIVE_CALORIES = "calories";
 /** Asked for together with workouts so sessions carry energy and distance. */
 const EXTRA_READ_TYPES = [ACTIVE_CALORIES, TOTAL_CALORIES, "distance"];
 
-/** True inside the Android app, false in a normal browser. */
+type Bridge = { isNativePlatform?: () => boolean; getPlatform?: () => string };
+
+function bridge(): Bridge | undefined {
+  if (typeof window === "undefined") return undefined;
+  return (window as unknown as { Capacitor?: Bridge }).Capacitor;
+}
+
+/** True inside the installed app (Android or iPhone), false in a normal browser. */
 export function isNativeApp(): boolean {
-  if (typeof window === "undefined") return false;
-  const bridge = (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor;
-  return bridge?.isNativePlatform?.() === true;
+  return bridge()?.isNativePlatform?.() === true;
+}
+
+export type HealthPlatform = "android" | "ios";
+
+/** Which health store the app talks to: Health Connect on Android, Apple Health on an iPhone. */
+export function healthPlatform(): HealthPlatform | null {
+  if (!isNativeApp()) return null;
+  return bridge()?.getPlatform?.() === "ios" ? "ios" : "android";
+}
+
+// Apple Health never tells an app whether read access was granted, so the app remembers that it asked.
+const IOS_ASKED_KEY = "apple-health:asked";
+
+function iosAsked(): boolean {
+  try {
+    return window.localStorage.getItem(IOS_ASKED_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function rememberIosAsked() {
+  try {
+    window.localStorage.setItem(IOS_ASKED_KEY, "1");
+  } catch {
+    // Without storage the question is simply asked again next time.
+  }
 }
 
 /**
@@ -77,13 +109,19 @@ export async function healthStatus(): Promise<HealthStatus> {
   const { health } = await plugin();
   const availability = await withTimeout(health.isAvailable(), STATUS_TIMEOUT_MS);
   if (!availability.available) return { state: "unavailable", reason: availability.reason ?? null };
+  if (healthPlatform() === "ios") return iosAsked() ? { state: "ready" } : { state: "needs_permission" };
   const status = await withTimeout(health.checkAuthorization({ read: [WORKOUTS] }), STATUS_TIMEOUT_MS);
   return status.readAuthorized?.includes(WORKOUTS) ? { state: "ready" } : { state: "needs_permission" };
 }
 
-/** Opens the Health Connect permission sheet. Returns whether workouts can now be read. */
+/** Opens the permission sheet of the health store. Returns whether workouts can now be read. */
 export async function requestHealthAccess(): Promise<boolean> {
   const { health } = await plugin();
+  if (healthPlatform() === "ios") {
+    await health.requestAuthorization({ read: [WORKOUTS, ACTIVE_CALORIES, "distance"] });
+    rememberIosAsked();
+    return true; // Apple Health does not report the answer; a sync that returns nothing shows it.
+  }
   let status: { readAuthorized?: string[] };
   try {
     status = await health.requestAuthorization({ read: [WORKOUTS, ...EXTRA_READ_TYPES] });
@@ -96,6 +134,7 @@ export async function requestHealthAccess(): Promise<boolean> {
 
 /** Whether calorie records can be read. Without it a workout's energy cannot be read reliably. */
 export async function canReadCalories(): Promise<boolean> {
+  if (healthPlatform() === "ios") return true;
   const { health } = await plugin();
   const status = await withTimeout(health.checkAuthorization({ read: [TOTAL_CALORIES] }), STATUS_TIMEOUT_MS);
   return status.readAuthorized?.includes(TOTAL_CALORIES) === true;
@@ -108,6 +147,8 @@ const ENERGY_WINDOW_SLACK_MS = 120_000;
  * record for the session, which the plugin's own workout figure can miss, so it is read directly.
  */
 export async function readSessionEnergy(workout: HealthWorkout): Promise<SessionEnergy> {
+  // On an iPhone the workout already carries its active energy, as recorded by the watch.
+  if (healthPlatform() === "ios") return { totalKcal: null, activeKcal: workout.totalEnergyKcal };
   const { health } = await plugin();
   const window = {
     startDate: new Date(new Date(workout.startDate).getTime() - ENERGY_WINDOW_SLACK_MS).toISOString(),
@@ -128,6 +169,7 @@ export async function readSessionEnergy(workout: HealthWorkout): Promise<Session
 }
 
 export async function openHealthSettings(): Promise<void> {
+  if (healthPlatform() === "ios") return; // there is no settings screen to open; access is managed in the Health app
   const { health } = await plugin();
   await health.openHealthConnectSettings();
 }

@@ -147,7 +147,7 @@ export type SessionEnergy = {
 };
 
 export type SyncedActivityInsert = {
-  external_provider: "health_connect" | "strava";
+  external_provider: "health_connect" | "apple_health" | "strava";
   external_activity_id: string;
   /** The app that recorded the workout, as the source names it. */
   source_app: string | null;
@@ -169,6 +169,8 @@ export type WorkoutOptions = {
   genericLabel?: string | null;
   /** Calorie records read for this session. They are more reliable than the figure on the workout itself. */
   energy?: SessionEnergy | null;
+  /** Where the workout was read from. Health Connect on Android (the default), Apple Health on an iPhone. */
+  provider?: "health_connect" | "apple_health";
 };
 
 export const GENERIC_ACTIVITY_LABEL = "אחר";
@@ -191,7 +193,7 @@ export function workoutToActivity(workout: HealthWorkout, options: WorkoutOption
   else if (isPlausibleEnergy(workout.totalEnergyKcal, workout.durationSeconds)) total = workout.totalEnergyKcal;
 
   return {
-    external_provider: "health_connect",
+    external_provider: options.provider ?? "health_connect",
     external_activity_id: workout.platformId,
     source_app: workout.sourceId ?? workout.sourceName,
     activity_type: label,
@@ -239,7 +241,7 @@ export function isSameWorkout(
 
 /**
  * Which copy of a workout counts when it arrived from several sources. Higher wins.
- *   3  Health Connect, recorded by a device app such as Samsung Health: the original measurement.
+ *   3  Health Connect or Apple Health, recorded by a device app such as Samsung Health: the original measurement.
  *   2  Strava: the original when the workout was started in Strava, a copy when Samsung Health uploaded it.
  *   1  Health Connect record that Strava itself wrote: a copy of a Strava workout.
  *   0  Typed in by hand.
@@ -249,7 +251,9 @@ export function isSameWorkout(
 export function sourceRank(row: { external_provider: string | null; source_app?: string | null }): number {
   if (row.external_provider === null) return 0;
   if (row.external_provider === "strava") return 2;
-  if (row.external_provider === "health_connect") return /strava/i.test(row.source_app ?? "") ? 1 : 3;
+  if (row.external_provider === "health_connect" || row.external_provider === "apple_health") {
+    return /strava/i.test(row.source_app ?? "") ? 1 : 3;
+  }
   return 1;
 }
 

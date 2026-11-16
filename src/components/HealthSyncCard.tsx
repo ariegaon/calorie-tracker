@@ -2,7 +2,15 @@
 
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Card, Notice } from "@/components/ui";
-import { healthStatus, isNativeApp, openHealthSettings, requestHealthAccess, type HealthStatus } from "@/lib/health/native";
+import {
+  healthPlatform,
+  healthStatus,
+  isNativeApp,
+  openHealthSettings,
+  requestHealthAccess,
+  type HealthPlatform,
+  type HealthStatus,
+} from "@/lib/health/native";
 import { runHealthSync, type SyncResult } from "@/lib/health/sync-data";
 
 const LAST_SYNC_KEY = "health-connect:last-sync";
@@ -28,15 +36,23 @@ function writeLastSync(time: number) {
   }
 }
 
-function resultText(result: SyncResult): string {
+/** Names shown for the health store of each platform. */
+const STORE: Record<HealthPlatform, { name: string; title: string }> = {
+  android: { name: "Health Connect", title: "אימונים מ-Samsung Health" },
+  ios: { name: "Apple Health", title: "אימונים מ-Apple Health" },
+};
+
+function resultText(result: SyncResult, platform: HealthPlatform): string {
+  const store = STORE[platform].name;
   if (result.read === 0) {
-    return (
-      `Health Connect לא החזיר אף אימון מ-${result.lookbackDays} הימים האחרונים. ` +
-      "כנראה ש-Samsung Health עוד לא העביר אליו את האימונים: פתח את Samsung Health, המתן לסיום הסנכרון עם השעון, ונסה שוב."
-    );
+    return platform === "ios"
+      ? `Apple Health לא החזיר אף אימון מ-${result.lookbackDays} הימים האחרונים. אם יש אימונים באפליקציית הבריאות, ` +
+          "בדוק שם, תחת שיתוף → אפליקציות, שלאפליקציה יש גישה לאימונים."
+      : `Health Connect לא החזיר אף אימון מ-${result.lookbackDays} הימים האחרונים. ` +
+          "כנראה ש-Samsung Health עוד לא העביר אליו את האימונים: פתח את Samsung Health, המתן לסיום הסנכרון עם השעון, ונסה שוב.";
   }
   if (result.usable === 0) {
-    return `התקבלו ${result.read} רשומות מ-Health Connect, אבל אף אחת לא במבנה שהאפליקציה מכירה. שדות: ${result.sampleFields.join(", ")}`;
+    return `התקבלו ${result.read} רשומות מ-${store}, אבל אף אחת לא במבנה שהאפליקציה מכירה. שדות: ${result.sampleFields.join(", ")}`;
   }
   const repairedNote =
     result.repaired === 0
@@ -45,7 +61,7 @@ function resultText(result: SyncResult): string {
         ? " אימון אחד שכבר היה ביומן עודכן (קלוריות או סוג)."
         : ` ${result.repaired} אימונים שכבר היו ביומן עודכנו (קלוריות או סוג).`;
   if (result.inserted === 0) {
-    return `אין אימונים חדשים. ${result.alreadySynced} אימונים מ-Health Connect כבר נמצאים ביומן.${repairedNote}`;
+    return `אין אימונים חדשים. ${result.alreadySynced} אימונים מ-${store} כבר נמצאים ביומן.${repairedNote}`;
   }
   const added = result.inserted === 1 ? "נוסף אימון אחד" : `נוספו ${result.inserted} אימונים`;
   const copies = result.inserted - result.counted;
@@ -63,6 +79,7 @@ function resultText(result: SyncResult): string {
 
 /** Shown only inside the Android app: connects to Health Connect and syncs workouts from it. */
 export function HealthSyncCard({ userId, onSynced }: { userId: string; onSynced: () => void }) {
+  const [platform, setPlatform] = useState<HealthPlatform>("android");
   const [native, setNative] = useState(false);
   const [status, setStatus] = useState<HealthStatus | null>(null);
   const [busy, setBusy] = useState(false);
@@ -82,10 +99,10 @@ export function HealthSyncCard({ userId, onSynced }: { userId: string; onSynced:
       const now = Date.now();
       writeLastSync(now);
       setLastSync(now);
-      setMessage(resultText(result));
+      setMessage(resultText(result, healthPlatform() ?? "android"));
       if (result.inserted > 0 || result.replaced > 0 || result.repaired > 0) onSynced();
     } catch {
-      setError("הסנכרון נכשל. בדוק שיש חיבור לאינטרנט ושההרשאה ל-Health Connect עדיין בתוקף.");
+      setError("הסנכרון נכשל. בדוק שיש חיבור לאינטרנט ושההרשאה לקריאת אימונים עדיין בתוקף.");
     } finally {
       setBusy(false);
     }
@@ -94,6 +111,7 @@ export function HealthSyncCard({ userId, onSynced }: { userId: string; onSynced:
   useEffect(() => {
     if (!isNativeApp()) return;
     setNative(true);
+    setPlatform(healthPlatform() ?? "android");
     setLastSync(readLastSync());
     let cancelled = false;
     healthStatus()
@@ -126,10 +144,10 @@ export function HealthSyncCard({ userId, onSynced }: { userId: string; onSynced:
         setStatus({ state: "ready" });
         await sync();
       } else {
-        setError("ההרשאה לקריאת אימונים לא ניתנה. אפשר לאשר אותה בהגדרות של Health Connect.");
+        setError("ההרשאה לקריאת אימונים לא ניתנה. אפשר לאשר אותה בהגדרות של אפליקציית הבריאות.");
       }
     } catch {
-      setError("לא הצלחנו לפתוח את מסך ההרשאות של Health Connect.");
+      setError("לא הצלחנו לפתוח את מסך ההרשאות.");
     } finally {
       setBusy(false);
     }
@@ -139,22 +157,24 @@ export function HealthSyncCard({ userId, onSynced }: { userId: string; onSynced:
 
   return (
     <Card className="space-y-3">
-      <h2 className="font-semibold">⌚ אימונים מ-Samsung Health</h2>
+      <h2 className="font-semibold">⌚ {STORE[platform].title}</h2>
 
       {status === null ? (
         <p className="text-sm text-slate-600">בודק את החיבור…</p>
       ) : status.state === "unavailable" ? (
         <Notice kind="info">
-          Health Connect לא זמין במכשיר הזה{status.reason ? ` (${status.reason})` : ""}. צריך להתקין או לעדכן אותו מ-Google Play.
+          {STORE[platform].name} לא זמין במכשיר הזה{status.reason ? ` (${status.reason})` : ""}.
+          {platform === "android" ? " צריך להתקין או לעדכן אותו מ-Google Play." : ""}
         </Notice>
       ) : status.state === "needs_permission" ? (
         <>
           <p className="text-sm text-slate-600">
-            האפליקציה תקרא אימונים (סוג, משך, מרחק וקלוריות) מ-Health Connect, שאליו Samsung Health כותב. היא רק קוראת,
-            ולא משנה שם דבר.
+            {platform === "ios"
+              ? "האפליקציה תקרא אימונים (סוג, משך, מרחק וקלוריות) מ-Apple Health. היא רק קוראת, ולא משנה שם דבר."
+              : "האפליקציה תקרא אימונים (סוג, משך, מרחק וקלוריות) מ-Health Connect, שאליו Samsung Health כותב. היא רק קוראת, ולא משנה שם דבר."}
           </p>
           <Button type="button" onClick={connect} disabled={busy}>
-            {busy ? "רגע…" : "חיבור ל-Health Connect"}
+            {busy ? "רגע…" : `חיבור ל-${STORE[platform].name}`}
           </Button>
         </>
       ) : (
@@ -168,7 +188,7 @@ export function HealthSyncCard({ userId, onSynced }: { userId: string; onSynced:
           {caloriesMissing ? (
             <>
               <Notice kind="info">
-                חסרה הרשאה לקרוא קלוריות מ-Health Connect, ולכן חלק מהאימונים נשמרו בלי קלוריות.
+                חסרה הרשאה לקרוא קלוריות מ-{STORE[platform].name}, ולכן חלק מהאימונים נשמרו בלי קלוריות.
               </Notice>
               <Button type="button" variant="secondary" onClick={connect} disabled={busy}>
                 אישור גישה לקלוריות
@@ -182,9 +202,11 @@ export function HealthSyncCard({ userId, onSynced }: { userId: string; onSynced:
       {error ? (
         <>
           <Notice kind="error">{error}</Notice>
-          <Button type="button" variant="ghost" onClick={() => void openHealthSettings().catch(() => undefined)}>
-            פתיחת הגדרות Health Connect
-          </Button>
+          {platform === "android" ? (
+            <Button type="button" variant="ghost" onClick={() => void openHealthSettings().catch(() => undefined)}>
+              פתיחת הגדרות Health Connect
+            </Button>
+          ) : null}
         </>
       ) : null}
     </Card>

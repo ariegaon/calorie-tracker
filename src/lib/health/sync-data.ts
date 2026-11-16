@@ -2,7 +2,7 @@
 // and repairs rows that an earlier sync stored without a believable energy figure.
 
 import { getSupabase } from "@/lib/supabase/client";
-import { canReadCalories, readSessionEnergy, readWorkouts } from "@/lib/health/native";
+import { canReadCalories, healthPlatform, readSessionEnergy, readWorkouts } from "@/lib/health/native";
 import {
   isPlausibleEnergy,
   needsEnergy,
@@ -43,6 +43,7 @@ type StoredRow = ExistingActivity & StoredSyncedActivity;
 
 export async function runHealthSync(userId: string, genericLabel: string | null): Promise<SyncResult> {
   const supabase = getSupabase();
+  const provider = healthPlatform() === "ios" ? "apple_health" : "health_connect";
   const since = new Date(Date.now() - LOOKBACK_DAYS * MS_PER_DAY);
   const { workouts, rawCount, sampleFields } = await readWorkouts(since);
 
@@ -59,7 +60,7 @@ export async function runHealthSync(userId: string, genericLabel: string | null)
   const rows = (existing.data ?? []) as unknown as StoredRow[];
   const storedById = new Map<string, StoredRow>();
   for (const row of rows) {
-    if (row.external_provider === "health_connect" && row.external_activity_id) storedById.set(row.external_activity_id, row);
+    if (row.external_provider === provider && row.external_activity_id) storedById.set(row.external_activity_id, row);
   }
 
   // Calorie records are read for new workouts and for stored ones that still lack a believable figure.
@@ -74,7 +75,7 @@ export async function runHealthSync(userId: string, genericLabel: string | null)
   }
 
   const fresh = workouts.map((workout) =>
-    workoutToActivity(workout, { genericLabel, energy: energyById.get(workout.platformId) ?? null }),
+    workoutToActivity(workout, { genericLabel, provider, energy: energyById.get(workout.platformId) ?? null }),
   );
   const plan = planNewActivities(fresh, rows);
 
