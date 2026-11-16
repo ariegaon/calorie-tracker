@@ -103,7 +103,16 @@
   `source_app` הוא עכשיו שם החבילה (`sourceId`), כך שעותקים ש-Strava כותבת מזוהים כ-`com.strava` ולא לפי תווית המכשיר.
   בכרטיס הסנכרון נוספה בחירה: "אימון כללי מהשעון יירשם כ" (נשמרת ב-localStorage במכשיר). סך הכול 148 בדיקות עוברות.
 - הנחה פתוחה: קלוריות האימון נשמרות כקלוריות כוללות (כך Samsung מסווג אותן ב-Health Connect), והמאזן מפחית מהן את חלק המנוחה.
-- אייפון: המשתמש שוקל גרסת iOS דרך חשבון מפתח של חבר. לא נעשה שום שינוי; נדרש אישור מפורש לפני שמתחילים.
+- תצוגה: אימון עם קלוריות כוללות מציג את המספר של השעון ובסוגריים את מה שנספר במאזן (`reportedKcal` ב-`buildTimeline`).
+  הבחירה "אימון כללי מהשעון יירשם כ" הוסרה מהמסך לבקשת המשתמש; CrossFit מהשעון מופיע כ"אחר" עד שמשנים ידנית.
+- iOS (16.11.2026, המשתמש פתח חשבון Apple Developer ואישר להתחיל): `.github/workflows/ios.yml` בונה ב-macOS, חותם אוטומטית
+  עם מפתח App Store Connect API ומעלה ל-TestFlight. `scripts/prepare-ios.mjs` מוסיף entitlement של HealthKit, טקסטי הרשאה,
+  צוות חתימה ומספר גרסה. לוג הבנייה נדחף לענף `ci-logs-ios` (`status.txt`, `errors.txt`, `ios-build.log`).
+  ריצה 1 נעצרה כמתוכנן בבדיקת ה-Secrets. נדרשים מהמשתמש ב-GitHub: `APPLE_TEAM_ID`, `ASC_KEY_ID`, `ASC_ISSUER_ID`, `ASC_PRIVATE_KEY`,
+  וכן רישום App ID `io.github.ariegaon.calorietracker` עם HealthKit ויצירת האפליקציה ב-App Store Connect.
+  קוד הסנכרון תומך ב-Apple Health: ספק `apple_health` (migration 0006), האנרגיה של האימון נשמרת כקלוריות פעילות,
+  ומכיוון ש-HealthKit לא מדווח אם ניתנה הרשאת קריאה, האפליקציה זוכרת שביקשה (`apple-health:asked`). סך הכול 151 בדיקות עוברות.
+  שום דבר מצד ה-iOS לא נבדק על מכשיר, והבנייה עצמה (archive, חתימה, העלאה) עוד לא רצה.
 
 ## בעיות פתוחות
 
