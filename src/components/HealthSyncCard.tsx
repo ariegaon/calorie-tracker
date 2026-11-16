@@ -1,11 +1,30 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button, Card, Notice } from "@/components/ui";
+import { Button, Card, Field, Notice, Select } from "@/components/ui";
+import { ACTIVITY_TYPES } from "@/lib/day/entries";
 import { healthStatus, isNativeApp, openHealthSettings, requestHealthAccess, type HealthStatus } from "@/lib/health/native";
 import { runHealthSync, type SyncResult } from "@/lib/health/sync-data";
 
 const LAST_SYNC_KEY = "health-connect:last-sync";
+const GENERIC_LABEL_KEY = "health-connect:generic-workout-label";
+const DEFAULT_GENERIC_LABEL = "אחר";
+
+function readGenericLabel(): string {
+  try {
+    return window.localStorage.getItem(GENERIC_LABEL_KEY) || DEFAULT_GENERIC_LABEL;
+  } catch {
+    return DEFAULT_GENERIC_LABEL;
+  }
+}
+
+function writeGenericLabel(label: string) {
+  try {
+    window.localStorage.setItem(GENERIC_LABEL_KEY, label);
+  } catch {
+    // Without storage the choice simply lasts until the app is closed.
+  }
+}
 const AUTO_SYNC_INTERVAL_MS = 15 * 60 * 1000;
 
 const timeFormat = new Intl.DateTimeFormat("he-IL", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
@@ -37,7 +56,15 @@ function resultText(result: SyncResult): string {
   if (result.usable === 0) {
     return `התקבלו ${result.read} רשומות מ-Health Connect, אבל אף אחת לא במבנה שהאפליקציה מכירה. שדות: ${result.sampleFields.join(", ")}`;
   }
-  if (result.inserted === 0) return `אין אימונים חדשים. ${result.alreadySynced} אימונים מ-Health Connect כבר נמצאים ביומן.`;
+  const repairedNote =
+    result.repaired === 0
+      ? ""
+      : result.repaired === 1
+        ? " אימון אחד שכבר היה ביומן עודכן (קלוריות או סוג)."
+        : ` ${result.repaired} אימונים שכבר היו ביומן עודכנו (קלוריות או סוג).`;
+  if (result.inserted === 0) {
+    return `אין אימונים חדשים. ${result.alreadySynced} אימונים מ-Health Connect כבר נמצאים ביומן.${repairedNote}`;
+  }
   const added = result.inserted === 1 ? "נוסף אימון אחד" : `נוספו ${result.inserted} אימונים`;
   const copies = result.inserted - result.counted;
   const notes: string[] = [];
@@ -49,7 +76,7 @@ function resultText(result: SyncResult): string {
         : `${result.replaced} רשומות שכבר היו ביומן לאותם אימונים הפסיקו להיספר, כדי שלא ייספרו פעמיים`,
     );
   }
-  return `${added}.${notes.length > 0 ? ` ${notes.join(". ")}.` : ""}`;
+  return `${added}.${notes.length > 0 ? ` ${notes.join(". ")}.` : ""}${repairedNote}`;
 }
 
 /** Shown only inside the Android app: connects to Health Connect and syncs workouts from it. */
@@ -60,19 +87,23 @@ export function HealthSyncCard({ userId, onSynced }: { userId: string; onSynced:
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastSync, setLastSync] = useState<number | null>(null);
+  const [genericLabel, setGenericLabel] = useState(DEFAULT_GENERIC_LABEL);
+  const [caloriesMissing, setCaloriesMissing] = useState(false);
   const autoSynced = useRef(false);
 
-  const sync = useCallback(async () => {
+  const sync = useCallback(async (labelOverride?: string) => {
     setBusy(true);
     setError(null);
     setMessage(null);
     try {
-      const result = await runHealthSync(userId);
+      const label = labelOverride ?? readGenericLabel();
+      const result = await runHealthSync(userId, label === DEFAULT_GENERIC_LABEL ? null : label);
+      setCaloriesMissing(!result.caloriesReadable);
       const now = Date.now();
       writeLastSync(now);
       setLastSync(now);
       setMessage(resultText(result));
-      if (result.inserted > 0 || result.replaced > 0) onSynced();
+      if (result.inserted > 0 || result.replaced > 0 || result.repaired > 0) onSynced();
     } catch {
       setError("הסנכרון נכשל. בדוק שיש חיבור לאינטרנט ושההרשאה ל-Health Connect עדיין בתוקף.");
     } finally {
@@ -84,6 +115,7 @@ export function HealthSyncCard({ userId, onSynced }: { userId: string; onSynced:
     if (!isNativeApp()) return;
     setNative(true);
     setLastSync(readLastSync());
+    setGenericLabel(readGenericLabel());
     let cancelled = false;
     healthStatus()
       .then((result) => {
@@ -124,6 +156,13 @@ export function HealthSyncCard({ userId, onSynced }: { userId: string; onSynced:
     }
   }
 
+  function chooseGenericLabel(label: string) {
+    setGenericLabel(label);
+    writeGenericLabel(label);
+    // Syncing right away renames the workouts that are already in the diary as "אחר".
+    void sync(label);
+  }
+
   if (!native) return null;
 
   return (
@@ -154,6 +193,34 @@ export function HealthSyncCard({ userId, onSynced }: { userId: string; onSynced:
           <Button type="button" variant="secondary" onClick={() => void sync()} disabled={busy}>
             {busy ? "מסנכרן…" : "סנכרון עכשיו"}
           </Button>
+          <Field
+            label="אימון כללי מהשעון יירשם כ:"
+            htmlFor="generic-workout-label"
+            hint="Samsung Health מעביר אימונים כמו CrossFit ל-Health Connect בלי שם, רק כ-Workout. כאן בוחרים איך לקרוא להם."
+          >
+            <Select
+              id="generic-workout-label"
+              value={genericLabel}
+              disabled={busy}
+              onChange={(event) => chooseGenericLabel(event.target.value)}
+            >
+              {[DEFAULT_GENERIC_LABEL, ...ACTIVITY_TYPES.filter((type) => type !== DEFAULT_GENERIC_LABEL)].map((type) => (
+                <option key={type} value={type}>
+                  {type}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          {caloriesMissing ? (
+            <>
+              <Notice kind="info">
+                חסרה הרשאה לקרוא קלוריות מ-Health Connect, ולכן חלק מהאימונים נשמרו בלי קלוריות.
+              </Notice>
+              <Button type="button" variant="secondary" onClick={connect} disabled={busy}>
+                אישור גישה לקלוריות
+              </Button>
+            </>
+          ) : null}
         </>
       )}
 

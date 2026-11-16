@@ -108,7 +108,8 @@ function minutes(seconds: number | null): string | null {
 }
 
 function kilometers(meters: number | null): string | null {
-  if (meters === null || Number(meters) <= 0) return null;
+  // Under 100 m is noise from a stationary workout, and would print as "0.0 km".
+  if (meters === null || Number(meters) < 100) return null;
   return `${(Number(meters) / 1000).toFixed(1)} ק"מ`;
 }
 

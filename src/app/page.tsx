@@ -112,7 +112,7 @@ function ActionButton({ icon, label, onClick }: { icon: string; label: string; o
 function TimelineItem({ event, onOpen }: { event: TimelineEvent; onOpen: () => void }) {
   let kcalText: ReactNode = null;
   if (event.kcal !== null) {
-    const burned = event.kcal < 0;
+    const burned = event.kind === "activity";
     kcalText = (
       <span className={"shrink-0 text-sm font-semibold tabular-nums " + (burned ? "text-sky-700" : "text-slate-900")}>
         {burned ? "נשרפו " : ""}

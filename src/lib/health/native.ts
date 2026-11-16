@@ -1,7 +1,7 @@
 // Bridge to Health Connect through the Capacitor health plugin. Browser-side only.
 // Everything here is a no-op outside the Android app.
 
-import { parseWorkout, type HealthWorkout } from "@/lib/health/sync";
+import { parseWorkout, sessionEnergy, type HealthWorkout, type SessionEnergy } from "@/lib/health/sync";
 
 /** The parts of the plugin this app uses, typed loosely so plugin updates cannot break the build. */
 type HealthPlugin = {
@@ -15,12 +15,20 @@ type HealthPlugin = {
     ascending: boolean;
     anchor?: string;
   }): Promise<{ workouts?: unknown[]; anchor?: string | null }>;
+  readSamples(options: {
+    dataType: string;
+    startDate: string;
+    endDate: string;
+    limit: number;
+  }): Promise<{ samples?: unknown[] }>;
   openHealthConnectSettings(): Promise<void>;
 };
 
 const WORKOUTS = "workouts";
+const TOTAL_CALORIES = "totalCalories";
+const ACTIVE_CALORIES = "calories";
 /** Asked for together with workouts so sessions carry energy and distance. */
-const EXTRA_READ_TYPES = ["calories", "totalCalories", "distance"];
+const EXTRA_READ_TYPES = [ACTIVE_CALORIES, TOTAL_CALORIES, "distance"];
 
 /** True inside the Android app, false in a normal browser. */
 export function isNativeApp(): boolean {
@@ -84,6 +92,39 @@ export async function requestHealthAccess(): Promise<boolean> {
     status = await health.requestAuthorization({ read: [WORKOUTS] });
   }
   return status.readAuthorized?.includes(WORKOUTS) === true;
+}
+
+/** Whether calorie records can be read. Without it a workout's energy cannot be read reliably. */
+export async function canReadCalories(): Promise<boolean> {
+  const { health } = await plugin();
+  const status = await withTimeout(health.checkAuthorization({ read: [TOTAL_CALORIES] }), STATUS_TIMEOUT_MS);
+  return status.readAuthorized?.includes(TOTAL_CALORIES) === true;
+}
+
+const ENERGY_WINDOW_SLACK_MS = 120_000;
+
+/**
+ * Calorie records of one workout. Samsung Health writes a workout's energy as a total-calories
+ * record for the session, which the plugin's own workout figure can miss, so it is read directly.
+ */
+export async function readSessionEnergy(workout: HealthWorkout): Promise<SessionEnergy> {
+  const { health } = await plugin();
+  const window = {
+    startDate: new Date(new Date(workout.startDate).getTime() - ENERGY_WINDOW_SLACK_MS).toISOString(),
+    endDate: new Date(new Date(workout.endDate).getTime() + ENERGY_WINDOW_SLACK_MS).toISOString(),
+    limit: 500,
+  };
+  const read = async (dataType: string): Promise<number | null> => {
+    try {
+      const result = await withTimeout(health.readSamples({ dataType, ...window }), READ_TIMEOUT_MS);
+      return sessionEnergy(result.samples ?? [], workout);
+    } catch {
+      return null; // permission missing or no data: the caller falls back
+    }
+  };
+  const totalKcal = await read(TOTAL_CALORIES);
+  if (totalKcal !== null) return { totalKcal, activeKcal: null };
+  return { totalKcal: null, activeKcal: await read(ACTIVE_CALORIES) };
 }
 
 export async function openHealthSettings(): Promise<void> {

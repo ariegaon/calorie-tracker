@@ -9,8 +9,39 @@ export type HealthWorkout = {
   durationSeconds: number | null;
   totalEnergyKcal: number | null;
   distanceM: number | null;
+  /** Device label when the record has one, otherwise the package name of the app that wrote it. */
   sourceName: string | null;
+  /** Package name of the app that wrote the record, such as com.sec.android.app.shealth. */
+  sourceId: string | null;
 };
+
+const SOURCE_LABELS: Record<string, string> = {
+  "com.sec.android.app.shealth": "Samsung Health",
+  "com.strava": "Strava",
+  "com.google.android.apps.fitness": "Google Fit",
+  "com.garmin.android.apps.connectmobile": "Garmin Connect",
+};
+
+/** Readable name of the app that wrote a record. */
+export function sourceLabel(workout: { sourceId: string | null; sourceName: string | null }): string {
+  if (workout.sourceId && SOURCE_LABELS[workout.sourceId]) return SOURCE_LABELS[workout.sourceId];
+  return workout.sourceId ?? workout.sourceName ?? "Health Connect";
+}
+
+/** Shorter than this, a recorded distance is noise (a gym session is not a 28-metre walk). */
+const MIN_DISTANCE_M = 50;
+
+/**
+ * Below this many kcal per minute a workout's energy figure is not believable:
+ * it is less than the body burns at rest, so it is some unrelated stray record.
+ */
+export const MIN_PLAUSIBLE_KCAL_PER_MINUTE = 1;
+
+export function isPlausibleEnergy(kcal: number | null, durationSeconds: number | null): boolean {
+  if (kcal === null || kcal <= 0) return false;
+  if (durationSeconds === null || durationSeconds <= 0) return true;
+  return kcal >= (durationSeconds / 60) * MIN_PLAUSIBLE_KCAL_PER_MINUTE;
+}
 
 const TYPE_LABELS: [RegExp, string][] = [
   [/cycl|bik|ride/i, "רכיבה"],
@@ -70,10 +101,50 @@ export function parseWorkout(raw: unknown): HealthWorkout | null {
     endDate: Number.isNaN(end) ? new Date(start).toISOString() : new Date(end).toISOString(),
     durationSeconds: duration !== null && duration > 0 ? Math.round(duration) : null,
     totalEnergyKcal: energy !== null && energy > 0 ? Math.round(energy * 10) / 10 : null,
-    distanceM: distance !== null && distance > 0 ? Math.round(distance * 10) / 10 : null,
-    sourceName: text("sourceName", "sourceId").slice(0, 60) || null,
+    distanceM: distance !== null && distance >= MIN_DISTANCE_M ? Math.round(distance * 10) / 10 : null,
+    sourceName: text("sourceName").slice(0, 60) || null,
+    sourceId: text("sourceId").slice(0, 100) || null,
   };
 }
+
+// ------------------------------------------------------------------ energy of a session
+
+/** Seconds a calorie record may start before or end after the session and still belong to it. */
+const ENERGY_WINDOW_SLACK_MS = 120_000;
+
+/**
+ * Energy of one workout from calorie records read for its time window.
+ * Only records that lie inside the session are used. When several apps wrote records for the
+ * same window, the app that recorded the workout wins; otherwise the app with the largest sum.
+ * Sums are never added across apps, because each app's records describe the same workout.
+ */
+export function sessionEnergy(samples: unknown[], workout: HealthWorkout): number | null {
+  const start = new Date(workout.startDate).getTime() - ENERGY_WINDOW_SLACK_MS;
+  const end = new Date(workout.endDate).getTime() + ENERGY_WINDOW_SLACK_MS;
+  const bySource = new Map<string, number>();
+  for (const raw of samples) {
+    if (typeof raw !== "object" || raw === null) continue;
+    const record = raw as Record<string, unknown>;
+    const value = finite(record.value, 20_000);
+    const sampleStart = new Date(typeof record.startDate === "string" ? record.startDate : "").getTime();
+    const sampleEnd = new Date(typeof record.endDate === "string" ? record.endDate : "").getTime();
+    if (value === null || value <= 0 || Number.isNaN(sampleStart) || Number.isNaN(sampleEnd)) continue;
+    if (sampleStart < start || sampleEnd > end) continue;
+    const source = typeof record.sourceId === "string" && record.sourceId !== "" ? record.sourceId : "unknown";
+    bySource.set(source, (bySource.get(source) ?? 0) + value);
+  }
+  if (bySource.size === 0) return null;
+  const own = workout.sourceId ? bySource.get(workout.sourceId) : undefined;
+  const sum = own ?? Math.max(...bySource.values());
+  return Math.round(sum * 10) / 10;
+}
+
+export type SessionEnergy = {
+  /** From TotalCaloriesBurned records of the session. */
+  totalKcal: number | null;
+  /** From ActiveCaloriesBurned records of the session, used when there are no total records. */
+  activeKcal: number | null;
+};
 
 export type SyncedActivityInsert = {
   external_provider: "health_connect" | "strava";
@@ -84,29 +155,53 @@ export type SyncedActivityInsert = {
   started_at: string;
   duration_seconds: number | null;
   distance_m: number | null;
-  calories_active_kcal: null;
+  calories_active_kcal: number | null;
   calories_total_kcal: number | null;
   calories_source: "external";
   notes: string | null;
 };
 
+export type WorkoutOptions = {
+  /**
+   * Name to use for workouts that Health Connect only knows as a generic "workout".
+   * Samsung Health reports CrossFit this way, so the user chooses what such workouts are.
+   */
+  genericLabel?: string | null;
+  /** Calorie records read for this session. They are more reliable than the figure on the workout itself. */
+  energy?: SessionEnergy | null;
+};
+
+export const GENERIC_ACTIVITY_LABEL = "אחר";
+
 /**
- * The activity row for a synced workout. The energy figure is stored as total calories:
- * the balance then removes the resting share of the workout's duration, so nothing is counted twice.
+ * The activity row for a synced workout.
+ * Energy, in order of preference:
+ *   1. total calories recorded for the session: stored as total, and the balance removes the resting share;
+ *   2. active calories recorded for the session: stored as active and counted as they are;
+ *   3. the figure attached to the workout, stored as total, but only when it is believable.
  */
-export function workoutToActivity(workout: HealthWorkout): SyncedActivityInsert {
+export function workoutToActivity(workout: HealthWorkout, options: WorkoutOptions = {}): SyncedActivityInsert {
+  let label = activityTypeLabel(workout.workoutType);
+  if (label === GENERIC_ACTIVITY_LABEL && options.genericLabel) label = options.genericLabel.trim().slice(0, 40) || label;
+
+  let total: number | null = null;
+  let active: number | null = null;
+  if (options.energy?.totalKcal != null && options.energy.totalKcal > 0) total = options.energy.totalKcal;
+  else if (options.energy?.activeKcal != null && options.energy.activeKcal > 0) active = options.energy.activeKcal;
+  else if (isPlausibleEnergy(workout.totalEnergyKcal, workout.durationSeconds)) total = workout.totalEnergyKcal;
+
   return {
     external_provider: "health_connect",
     external_activity_id: workout.platformId,
-    source_app: workout.sourceName,
-    activity_type: activityTypeLabel(workout.workoutType),
+    source_app: workout.sourceId ?? workout.sourceName,
+    activity_type: label,
     started_at: workout.startDate,
     duration_seconds: workout.durationSeconds,
     distance_m: workout.distanceM,
-    calories_active_kcal: null,
-    calories_total_kcal: workout.totalEnergyKcal,
+    calories_active_kcal: active,
+    calories_total_kcal: total,
     calories_source: "external",
-    notes: workout.sourceName ? `סונכרן מ-${workout.sourceName}` : "סונכרן מ-Health Connect",
+    notes: `סונכרן מ-${sourceLabel(workout)}`,
   };
 }
 
@@ -223,7 +318,51 @@ export function planNewActivities(candidates: SyncedActivityInsert[], existing: 
 }
 
 export function planSync(workouts: HealthWorkout[], existing: ExistingActivity[]): SyncPlan {
-  return planNewActivities(workouts.map(workoutToActivity), existing);
+  return planNewActivities(workouts.map((workout) => workoutToActivity(workout)), existing);
+}
+
+// ------------------------------------------------------------------ repairing rows from earlier syncs
+
+export type StoredSyncedActivity = {
+  id: string;
+  external_activity_id: string | null;
+  activity_type: string;
+  duration_seconds: number | null;
+  distance_m: number | null;
+  calories_active_kcal: number | null;
+  calories_total_kcal: number | null;
+  source_app: string | null;
+};
+
+/** True when a stored row has no believable energy figure and nothing typed in by the user. */
+export function needsEnergy(row: Pick<StoredSyncedActivity, "calories_active_kcal" | "calories_total_kcal" | "duration_seconds">): boolean {
+  if (row.calories_active_kcal !== null) return false;
+  const total = row.calories_total_kcal === null ? null : Number(row.calories_total_kcal);
+  return !isPlausibleEnergy(total, row.duration_seconds === null ? null : Number(row.duration_seconds));
+}
+
+/**
+ * What to change on a row stored by an earlier sync, given what the workout looks like now.
+ * Only gaps are filled: a missing or unbelievable energy figure, a generic type, a stray short
+ * distance and the source app. Values the user typed (active calories, a specific type) are kept.
+ */
+export function repairFor(stored: StoredSyncedActivity, fresh: SyncedActivityInsert): Record<string, unknown> | null {
+  const changes: Record<string, unknown> = {};
+  if (needsEnergy(stored)) {
+    if (fresh.calories_total_kcal !== null) changes.calories_total_kcal = fresh.calories_total_kcal;
+    else if (fresh.calories_active_kcal !== null) {
+      changes.calories_active_kcal = fresh.calories_active_kcal;
+      changes.calories_total_kcal = null;
+    } else if (stored.calories_total_kcal !== null) changes.calories_total_kcal = null;
+  }
+  if (stored.activity_type === GENERIC_ACTIVITY_LABEL && fresh.activity_type !== GENERIC_ACTIVITY_LABEL) {
+    changes.activity_type = fresh.activity_type;
+  }
+  if (stored.distance_m !== null && Number(stored.distance_m) < MIN_DISTANCE_M && fresh.distance_m === null) {
+    changes.distance_m = null;
+  }
+  if (fresh.source_app !== null && stored.source_app !== fresh.source_app) changes.source_app = fresh.source_app;
+  return Object.keys(changes).length > 0 ? changes : null;
 }
 
 // ------------------------------------------------------------------ Strava

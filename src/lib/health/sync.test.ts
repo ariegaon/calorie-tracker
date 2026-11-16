@@ -2,6 +2,11 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
   activityTypeLabel,
+  isPlausibleEnergy,
+  needsEnergy,
+  repairFor,
+  sessionEnergy,
+  sourceLabel,
   isSameWorkout,
   parseWorkout,
   planNewActivities,
@@ -26,7 +31,8 @@ const rawRide = {
   duration: 157 * 60,
   totalEnergyBurned: 1520.44,
   totalDistance: 41800,
-  sourceName: "Samsung Health",
+  sourceName: "com.sec.android.app.shealth",
+  sourceId: "com.sec.android.app.shealth",
 };
 
 test("workout types map to the app's Hebrew names, which have their own icons", () => {
@@ -53,17 +59,19 @@ test("a raw workout is checked and normalised", () => {
     durationSeconds: 9420,
     totalEnergyKcal: 1520.4,
     distanceM: 41800,
-    sourceName: "Samsung Health",
+    sourceName: "com.sec.android.app.shealth",
+    sourceId: "com.sec.android.app.shealth",
   });
 });
 
 test("duration falls back to the start and end times; bad values become null", () => {
-  const workout = parseWorkout({ ...rawRide, duration: undefined, totalEnergyBurned: -5, totalDistance: "far", sourceName: "" });
+  const workout = parseWorkout({ ...rawRide, duration: undefined, totalEnergyBurned: -5, totalDistance: "far", sourceName: "", sourceId: "" });
   assert.ok(workout);
   assert.equal(workout.durationSeconds, 9420);
   assert.equal(workout.totalEnergyKcal, null);
   assert.equal(workout.distanceM, null);
   assert.equal(workout.sourceName, null);
+  assert.equal(workout.sourceId, null);
 });
 
 test("a workout without an id gets a stable one from its times and type", () => {
@@ -264,7 +272,9 @@ test("the Strava copy came first: the Health Connect original takes over when it
 });
 
 test("a workout started in Strava counts from Strava, not from the copy Strava wrote to Health Connect", () => {
-  const stravaCopy = parseWorkout({ ...rawRide, platformId: "hc-from-strava", sourceName: "com.strava" });
+  // Strava's records carry the phone as the device label, so only the package name identifies them.
+  const stravaCopy = parseWorkout({ ...rawRide, platformId: "hc-from-strava", sourceName: "samsung SM-S918B", sourceId: "com.strava" });
+  assert.equal(workoutToActivity(stravaCopy!).source_app, "com.strava");
   const candidate = stravaToActivity({ ...stravaRide, device_name: "Strava Android App" });
   assert.ok(stravaCopy && candidate);
 
@@ -309,4 +319,154 @@ test("a later sync never overrides the user's manual choice between copies", () 
   assert.deepEqual(plan.toInsert, []);
   assert.deepEqual(plan.excludeIds, []);
   assert.equal(plan.alreadySynced, 1);
+});
+
+// ------------------------------------------------------------------ energy of a session (Galaxy Watch CrossFit)
+
+// A CrossFit session as Samsung Health writes it: generic type, no active-calorie records of its own.
+const rawCrossfit = {
+  platformId: "hc-crossfit-1",
+  workoutType: "other",
+  startDate: at(17, 0),
+  endDate: at(17, 53),
+  duration: 53 * 60,
+  totalEnergyBurned: 2.7, // stray active calories from another app during the hour
+  totalDistance: 27.7,
+  sourceName: "com.sec.android.app.shealth",
+  sourceId: "com.sec.android.app.shealth",
+};
+
+const totalSamples = [
+  { value: 366, unit: "kilocalorie", startDate: at(17, 0), endDate: at(17, 53), sourceId: "com.sec.android.app.shealth" },
+  { value: 2100, unit: "kilocalorie", startDate: at(0, 0), endDate: at(23, 59), sourceId: "com.sec.android.app.shealth" }, // whole day
+  { value: 40, unit: "kilocalorie", startDate: at(16, 30), endDate: at(17, 10), sourceId: "com.sec.android.app.shealth" }, // straddles the start
+];
+
+test("believable energy is at least one kcal a minute", () => {
+  assert.equal(isPlausibleEnergy(2.7, 53 * 60), false);
+  assert.equal(isPlausibleEnergy(366, 53 * 60), true);
+  assert.equal(isPlausibleEnergy(null, 600), false);
+  assert.equal(isPlausibleEnergy(0, 600), false);
+  assert.equal(isPlausibleEnergy(120, null), true);
+});
+
+test("session energy uses only calorie records inside the workout", () => {
+  const workout = parseWorkout(rawCrossfit);
+  assert.ok(workout);
+  assert.equal(sessionEnergy(totalSamples, workout), 366);
+  assert.equal(sessionEnergy([totalSamples[1], totalSamples[2]], workout), null);
+  assert.equal(sessionEnergy([], workout), null);
+  assert.equal(sessionEnergy([null, "x", { value: "366" }, { value: 50, startDate: "bad", endDate: at(17, 30) }], workout), null);
+});
+
+test("session energy is taken from the app that recorded the workout, never summed across apps", () => {
+  const workout = parseWorkout(rawCrossfit);
+  assert.ok(workout);
+  const twoApps = [
+    { value: 200, startDate: at(17, 0), endDate: at(17, 25), sourceId: "com.sec.android.app.shealth" },
+    { value: 166, startDate: at(17, 25), endDate: at(17, 53), sourceId: "com.sec.android.app.shealth" },
+    { value: 380, startDate: at(17, 0), endDate: at(17, 53), sourceId: "com.strava" },
+  ];
+  assert.equal(sessionEnergy(twoApps, workout), 366);
+  // Without records from the recording app, the largest single app is used.
+  const others = [
+    { value: 380, startDate: at(17, 0), endDate: at(17, 53), sourceId: "com.strava" },
+    { value: 12, startDate: at(17, 10), endDate: at(17, 20), sourceId: "com.other" },
+  ];
+  assert.equal(sessionEnergy(others, workout), 380);
+});
+
+test("a Galaxy Watch CrossFit session: 366 total kcal, named by the user's choice, no stray distance", () => {
+  const workout = parseWorkout(rawCrossfit);
+  assert.ok(workout);
+  assert.equal(workout.distanceM, null);
+  const row = workoutToActivity(workout, { genericLabel: "CrossFit", energy: { totalKcal: 366, activeKcal: null } });
+  assert.equal(row.activity_type, "CrossFit");
+  assert.equal(row.calories_total_kcal, 366);
+  assert.equal(row.calories_active_kcal, null);
+  assert.equal(row.distance_m, null);
+  assert.equal(row.source_app, "com.sec.android.app.shealth");
+  assert.equal(row.notes, "סונכרן מ-Samsung Health");
+
+  // In the balance: 366 minus the resting share of 53 minutes (1780 * 3180 / 86400 = 65.5).
+  const counted = activeCaloriesForActivity(
+    { caloriesActiveKcal: null, caloriesTotalKcal: row.calories_total_kcal, durationSeconds: row.duration_seconds },
+    1780,
+  );
+  assert.ok(Math.abs(counted.kcal - (366 - 65.51)) < 0.05);
+});
+
+test("without calorie records an unbelievable figure is dropped, not stored", () => {
+  const workout = parseWorkout(rawCrossfit);
+  assert.ok(workout);
+  const row = workoutToActivity(workout);
+  assert.equal(row.calories_total_kcal, null);
+  assert.equal(row.calories_active_kcal, null);
+  assert.equal(row.activity_type, "אחר");
+});
+
+test("active calorie records are used as active when there are no total records", () => {
+  const workout = parseWorkout(rawCrossfit);
+  assert.ok(workout);
+  const row = workoutToActivity(workout, { energy: { totalKcal: null, activeKcal: 300 } });
+  assert.equal(row.calories_active_kcal, 300);
+  assert.equal(row.calories_total_kcal, null);
+});
+
+test("the user's generic label does not rename workouts that have a specific type", () => {
+  const ride = parseWorkout(rawRide);
+  assert.ok(ride);
+  assert.equal(workoutToActivity(ride, { genericLabel: "CrossFit" }).activity_type, "רכיבה");
+});
+
+test("source labels are readable", () => {
+  assert.equal(sourceLabel({ sourceId: "com.sec.android.app.shealth", sourceName: "samsung SM-S918B" }), "Samsung Health");
+  assert.equal(sourceLabel({ sourceId: "com.strava", sourceName: null }), "Strava");
+  assert.equal(sourceLabel({ sourceId: "com.example.app", sourceName: null }), "com.example.app");
+  assert.equal(sourceLabel({ sourceId: null, sourceName: null }), "Health Connect");
+});
+
+// ------------------------------------------------------------------ repairing rows from earlier syncs
+
+const storedCrossfit = {
+  id: "row-1",
+  external_activity_id: "hc-crossfit-1",
+  activity_type: "אחר",
+  duration_seconds: 3125,
+  distance_m: 27.7,
+  calories_active_kcal: null,
+  calories_total_kcal: 2.7,
+  source_app: "com.sec.android.app.shealth",
+};
+
+test("a row synced with a stray energy figure is repaired", () => {
+  assert.equal(needsEnergy(storedCrossfit), true);
+  const workout = parseWorkout(rawCrossfit);
+  assert.ok(workout);
+  const fresh = workoutToActivity(workout, { genericLabel: "CrossFit", energy: { totalKcal: 366, activeKcal: null } });
+  assert.deepEqual(repairFor(storedCrossfit, fresh), { calories_total_kcal: 366, activity_type: "CrossFit", distance_m: null });
+});
+
+test("a stray figure is cleared even when no better one was found", () => {
+  const workout = parseWorkout(rawCrossfit);
+  assert.ok(workout);
+  assert.deepEqual(repairFor(storedCrossfit, workoutToActivity(workout)), { calories_total_kcal: null, distance_m: null });
+});
+
+test("rows with good values, and values the user typed, are left alone", () => {
+  const workout = parseWorkout(rawCrossfit);
+  assert.ok(workout);
+  const fresh = workoutToActivity(workout, { genericLabel: "CrossFit", energy: { totalKcal: 366, activeKcal: null } });
+  const good = { ...storedCrossfit, activity_type: "CrossFit", calories_total_kcal: 366, distance_m: null };
+  assert.equal(repairFor(good, fresh), null);
+  const userEdited = { ...storedCrossfit, activity_type: "אימון כוח", calories_active_kcal: 310, distance_m: null };
+  assert.equal(needsEnergy(userEdited), false);
+  assert.equal(repairFor(userEdited, fresh), null);
+});
+
+test("an older row learns which app wrote it", () => {
+  const stravaCopy = parseWorkout({ ...rawRide, platformId: "x", sourceName: "samsung SM-S918B", sourceId: "com.strava" });
+  assert.ok(stravaCopy);
+  const stored = { ...storedCrossfit, activity_type: "רכיבה", calories_total_kcal: 1337.3, duration_seconds: 9420, distance_m: 41737, source_app: "samsung SM-S918B" };
+  assert.deepEqual(repairFor(stored, workoutToActivity(stravaCopy)), { source_app: "com.strava" });
 });
