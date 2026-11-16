@@ -111,7 +111,17 @@ function ActionButton({ icon, label, onClick }: { icon: string; label: string; o
 
 function TimelineItem({ event, onOpen }: { event: TimelineEvent; onOpen: () => void }) {
   let kcalText: ReactNode = null;
-  if (event.kcal !== null) {
+  if (event.kcal !== null && event.reportedKcal != null) {
+    // The watch's own figure first, so it matches what the user sees there; the counted part below it.
+    kcalText = (
+      <span className="shrink-0 text-end">
+        <span className="block text-sm font-semibold tabular-nums text-sky-700">
+          נשרפו {formatNumber(event.reportedKcal)} קק"ל
+        </span>
+        <span className="block text-xs tabular-nums text-slate-500">(במאזן: {formatNumber(Math.abs(event.kcal))})</span>
+      </span>
+    );
+  } else if (event.kcal !== null) {
     const burned = event.kind === "activity";
     kcalText = (
       <span className={"shrink-0 text-sm font-semibold tabular-nums " + (burned ? "text-sky-700" : "text-slate-900")}>
@@ -603,6 +613,12 @@ export default function HomePage() {
               ))}
             </ul>
           )}
+          {timeline.some((event) => event.reportedKcal != null) ? (
+            <p className="mt-2 text-xs leading-relaxed text-slate-500">
+              באימון מהשעון מוצג המספר כפי שהוא בשעון. בסוגריים: מה שנספר במאזן, אחרי הפחתת הקלוריות שהגוף שורף במנוחה באותו
+              זמן, כי הן כבר כלולות בהוצאה הבסיסית של היום.
+            </p>
+          ) : null}
         </Card>
       </div>
 

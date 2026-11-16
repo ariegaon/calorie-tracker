@@ -100,6 +100,11 @@ export type TimelineEvent = {
   detail: string;
   /** Calories eaten or drunk (positive) or burned in a workout (negative). Null when not relevant. */
   kcal: number | null;
+  /**
+   * For a workout whose source gave total calories: that figure, as the watch shows it.
+   * The balance counts less (see kcal), because the resting share is already in the daily baseline.
+   */
+  reportedKcal?: number | null;
 };
 
 function minutes(seconds: number | null): string | null {
@@ -159,6 +164,10 @@ export function buildTimeline(data: DayData, bmr: number | null): TimelineEvent[
       title: activity.activity_type,
       detail: parts.filter(Boolean).join(" · "),
       kcal: counted ? -result.kcal : null,
+      reportedKcal:
+        result.method === "total_minus_resting" && activity.calories_total_kcal !== null
+          ? Number(activity.calories_total_kcal)
+          : null,
     });
   }
 

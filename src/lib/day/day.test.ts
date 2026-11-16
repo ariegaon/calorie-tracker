@@ -360,3 +360,21 @@ test("each activity type gets its own icon, with a neutral fallback", () => {
     assert.notEqual(activityIcon(type), "🤸", type);
   }
 });
+
+test("a workout with total calories keeps the watch's figure next to what the balance counts", () => {
+  const data = {
+    foods: [],
+    drinks: [],
+    weights: [],
+    activities: [
+      activity("watch", new Date(2026, 10, 16, 17, 0), { calories_active_kcal: null, calories_total_kcal: 365.9, duration_seconds: 3125 }),
+      activity("typed", new Date(2026, 10, 16, 19, 0), { calories_active_kcal: 350 }),
+    ],
+  };
+  const [watch, typed] = buildTimeline(data, 1700);
+  assert.equal(watch.reportedKcal, 365.9);
+  // 365.9 minus the resting share: 1700 * 3125 / 86400 = 61.5
+  assert.ok(Math.abs((watch.kcal ?? 0) + (365.9 - 61.49)) < 0.05);
+  assert.equal(typed.reportedKcal, null);
+  assert.equal(typed.kcal, -350);
+});

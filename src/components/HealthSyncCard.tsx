@@ -1,30 +1,12 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Button, Card, Field, Notice, Select } from "@/components/ui";
-import { ACTIVITY_TYPES } from "@/lib/day/entries";
+import { Button, Card, Notice } from "@/components/ui";
 import { healthStatus, isNativeApp, openHealthSettings, requestHealthAccess, type HealthStatus } from "@/lib/health/native";
 import { runHealthSync, type SyncResult } from "@/lib/health/sync-data";
 
 const LAST_SYNC_KEY = "health-connect:last-sync";
-const GENERIC_LABEL_KEY = "health-connect:generic-workout-label";
-const DEFAULT_GENERIC_LABEL = "אחר";
 
-function readGenericLabel(): string {
-  try {
-    return window.localStorage.getItem(GENERIC_LABEL_KEY) || DEFAULT_GENERIC_LABEL;
-  } catch {
-    return DEFAULT_GENERIC_LABEL;
-  }
-}
-
-function writeGenericLabel(label: string) {
-  try {
-    window.localStorage.setItem(GENERIC_LABEL_KEY, label);
-  } catch {
-    // Without storage the choice simply lasts until the app is closed.
-  }
-}
 const AUTO_SYNC_INTERVAL_MS = 15 * 60 * 1000;
 
 const timeFormat = new Intl.DateTimeFormat("he-IL", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
@@ -87,17 +69,15 @@ export function HealthSyncCard({ userId, onSynced }: { userId: string; onSynced:
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastSync, setLastSync] = useState<number | null>(null);
-  const [genericLabel, setGenericLabel] = useState(DEFAULT_GENERIC_LABEL);
   const [caloriesMissing, setCaloriesMissing] = useState(false);
   const autoSynced = useRef(false);
 
-  const sync = useCallback(async (labelOverride?: string) => {
+  const sync = useCallback(async () => {
     setBusy(true);
     setError(null);
     setMessage(null);
     try {
-      const label = labelOverride ?? readGenericLabel();
-      const result = await runHealthSync(userId, label === DEFAULT_GENERIC_LABEL ? null : label);
+      const result = await runHealthSync(userId, null);
       setCaloriesMissing(!result.caloriesReadable);
       const now = Date.now();
       writeLastSync(now);
@@ -115,7 +95,6 @@ export function HealthSyncCard({ userId, onSynced }: { userId: string; onSynced:
     if (!isNativeApp()) return;
     setNative(true);
     setLastSync(readLastSync());
-    setGenericLabel(readGenericLabel());
     let cancelled = false;
     healthStatus()
       .then((result) => {
@@ -156,13 +135,6 @@ export function HealthSyncCard({ userId, onSynced }: { userId: string; onSynced:
     }
   }
 
-  function chooseGenericLabel(label: string) {
-    setGenericLabel(label);
-    writeGenericLabel(label);
-    // Syncing right away renames the workouts that are already in the diary as "אחר".
-    void sync(label);
-  }
-
   if (!native) return null;
 
   return (
@@ -193,24 +165,6 @@ export function HealthSyncCard({ userId, onSynced }: { userId: string; onSynced:
           <Button type="button" variant="secondary" onClick={() => void sync()} disabled={busy}>
             {busy ? "מסנכרן…" : "סנכרון עכשיו"}
           </Button>
-          <Field
-            label="אימון כללי מהשעון יירשם כ:"
-            htmlFor="generic-workout-label"
-            hint="Samsung Health מעביר אימונים כמו CrossFit ל-Health Connect בלי שם, רק כ-Workout. כאן בוחרים איך לקרוא להם."
-          >
-            <Select
-              id="generic-workout-label"
-              value={genericLabel}
-              disabled={busy}
-              onChange={(event) => chooseGenericLabel(event.target.value)}
-            >
-              {[DEFAULT_GENERIC_LABEL, ...ACTIVITY_TYPES.filter((type) => type !== DEFAULT_GENERIC_LABEL)].map((type) => (
-                <option key={type} value={type}>
-                  {type}
-                </option>
-              ))}
-            </Select>
-          </Field>
           {caloriesMissing ? (
             <>
               <Notice kind="info">
