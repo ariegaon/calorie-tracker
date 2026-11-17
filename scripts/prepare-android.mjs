@@ -51,7 +51,7 @@ update("android/app/build.gradle", (text) =>
 );
 
 // App icon: pre-rendered PNGs from resources/android (see resources/icon.svg), plus an adaptive icon
-// whose background is the app green (#059669, as the meal-analysis button).
+// whose background is the same green gradient (mipmap ic_launcher_background).
 const RES = "android/app/src/main/res";
 for (const density of readdirSync("resources/android")) {
   for (const file of readdirSync(`resources/android/${density}`)) {
@@ -66,7 +66,7 @@ writeFileSync(
 );
 const adaptive = `<?xml version="1.0" encoding="utf-8"?>
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@color/ic_launcher_background" />
+    <background android:drawable="@mipmap/ic_launcher_background" />
     <foreground android:drawable="@mipmap/ic_launcher_foreground" />
 </adaptive-icon>
 `;
