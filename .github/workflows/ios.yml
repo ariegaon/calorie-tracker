@@ -121,11 +121,19 @@ jobs:
               "${AUTH[@]}"
             ( cd "$RUNNER_TEMP/local" && unzip -q -o *.ipa && echo "Exported entitlements:" && codesign -d --entitlements - Payload/*.app )
 
-            xcodebuild -exportArchive \
-              -archivePath "$RUNNER_TEMP/App.xcarchive" \
-              -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
-              -exportPath "$RUNNER_TEMP/export" \
-              "${AUTH[@]}"
+            # Apple's side sometimes fails transiently ("Error Downloading App Information"), so the upload is retried.
+            for attempt in 1 2 3; do
+              if xcodebuild -exportArchive \
+                -archivePath "$RUNNER_TEMP/App.xcarchive" \
+                -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+                -exportPath "$RUNNER_TEMP/export" \
+                "${AUTH[@]}"; then
+                break
+              fi
+              if [ "$attempt" = 3 ]; then exit 1; fi
+              echo "Upload attempt $attempt failed; retrying in 60 s"
+              sleep 60
+            done
           } 2>&1 | tee "$RUNNER_TEMP/build.log"
 
       - name: Remove API key
