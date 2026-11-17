@@ -85,8 +85,14 @@ jobs:
             xcodebuild "${CONTAINER[@]}" -scheme App -configuration Release \
               -destination 'generic/platform=iOS' \
               -archivePath "$RUNNER_TEMP/App.xcarchive" \
-              CODE_SIGN_IDENTITY="Apple Distribution" \
+              CODE_SIGNING_ALLOWED=NO \
               "${AUTH[@]}" archive
+
+            # The archive is built unsigned (automatic signing would need a registered device).
+            # Sign it ad hoc with the HealthKit entitlements so the App Store signing at export keeps them.
+            APP_PATH=$(find "$RUNNER_TEMP/App.xcarchive/Products/Applications" -maxdepth 1 -name "*.app" | head -n 1)
+            codesign --force --sign - --entitlements App/App.entitlements --timestamp=none "$APP_PATH"
+            codesign -d --entitlements - "$APP_PATH"
 
             cat > "$RUNNER_TEMP/ExportOptions.plist" <<PLIST
           <?xml version="1.0" encoding="UTF-8"?>
@@ -102,6 +108,14 @@ jobs:
           </dict>
           </plist>
           PLIST
+
+            sed 's|<string>upload</string>|<string>export</string>|' "$RUNNER_TEMP/ExportOptions.plist" > "$RUNNER_TEMP/ExportLocal.plist"
+            xcodebuild -exportArchive \
+              -archivePath "$RUNNER_TEMP/App.xcarchive" \
+              -exportOptionsPlist "$RUNNER_TEMP/ExportLocal.plist" \
+              -exportPath "$RUNNER_TEMP/local" \
+              "${AUTH[@]}"
+            ( cd "$RUNNER_TEMP/local" && unzip -q -o *.ipa && echo "Exported entitlements:" && codesign -d --entitlements - Payload/*.app )
 
             xcodebuild -exportArchive \
               -archivePath "$RUNNER_TEMP/App.xcarchive" \
