@@ -15,6 +15,8 @@ import {
 } from "@/lib/profile";
 import { validateProfile, type ProfileErrors, type ProfileForm } from "@/lib/validation/profile";
 import { BottomNav } from "@/components/BottomNav";
+import { isNativeApp } from "@/lib/health/native";
+import { DeleteAccountCard } from "@/components/DeleteAccountCard";
 import { Button, Card, Field, FullPageMessage, Notice, Select, TextInput } from "@/components/ui";
 
 export default function ProfilePage() {
@@ -28,6 +30,9 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  // The APK link is only for the website; inside the installed app (and on an iPhone) it makes no sense.
+  const [showApkLink, setShowApkLink] = useState(false);
+  useEffect(() => setShowApkLink(!isNativeApp()), []);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -266,7 +271,7 @@ export default function ProfilePage() {
         ) : null}
       </form>
 
-      {!isOnboarding ? (
+      {!isOnboarding && showApkLink ? (
         <Card className="space-y-2">
           <h2 className="font-semibold">אפליקציית אנדרואיד</h2>
           <p className="text-sm text-slate-600">
@@ -288,6 +293,8 @@ export default function ProfilePage() {
         </Button>
         <p className="text-center text-xs text-slate-500">מחובר כ-{session?.user.email}</p>
       </div>
+
+      <DeleteAccountCard onDeleted={() => router.replace("/login")} />
       {!isOnboarding ? <BottomNav /> : null}
     </main>
   );

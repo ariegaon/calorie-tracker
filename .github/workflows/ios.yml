@@ -15,6 +15,7 @@ on:
     paths:
       - ".github/workflows/ios.yml"
       - "scripts/prepare-ios.mjs"
+      - "resources/**"
 
 permissions:
   contents: write

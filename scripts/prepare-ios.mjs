@@ -1,7 +1,7 @@
 // Adjusts the iOS project that `npx cap add ios` generates: HealthKit entitlement, the texts iOS shows
 // when asking for access, signing team and version number. Run from the repository root in CI.
 
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 
 const TEAM_ID = process.env.APPLE_TEAM_ID ?? "";
 const RUN_NUMBER = Number(process.env.GITHUB_RUN_NUMBER ?? "1");
@@ -80,3 +80,34 @@ update(PROJECT, (text) => {
     .replace(/CURRENT_PROJECT_VERSION = [^;]*;/g, `CURRENT_PROJECT_VERSION = ${RUN_NUMBER};`)
     .replace(/MARKETING_VERSION = [^;]*;/g, `MARKETING_VERSION = 0.1.${RUN_NUMBER};`);
 });
+
+// App icon and launch image (see resources/icon.svg). Since Xcode 14 one 1024px icon is enough;
+// it must have no transparency, which resources/icon-1024.png satisfies.
+const ASSETS = "ios/App/App/Assets.xcassets";
+const ICON_SET = `${ASSETS}/AppIcon.appiconset`;
+mkdirSync(ICON_SET, { recursive: true });
+for (const file of readdirSync(ICON_SET)) if (file.endsWith(".png")) rmSync(`${ICON_SET}/${file}`);
+copyFileSync("resources/icon-1024.png", `${ICON_SET}/AppIcon-512@2x.png`);
+writeFileSync(
+  `${ICON_SET}/Contents.json`,
+  JSON.stringify(
+    {
+      images: [{ filename: "AppIcon-512@2x.png", idiom: "universal", platform: "ios", size: "1024x1024" }],
+      info: { author: "xcode", version: 1 },
+    },
+    null,
+    2,
+  ) + "\n",
+);
+console.log(`icon      ${ICON_SET}`);
+
+// The launch screen shows the "Splash" image set; every file in it is replaced with the app's own.
+const SPLASH_SET = `${ASSETS}/Splash.imageset`;
+if (existsSync(SPLASH_SET)) {
+  for (const file of readdirSync(SPLASH_SET)) {
+    if (file.endsWith(".png")) copyFileSync("resources/splash-2732.png", `${SPLASH_SET}/${file}`);
+  }
+  console.log(`splash    ${SPLASH_SET}`);
+} else {
+  console.log(`missing   ${SPLASH_SET} (launch image left as generated)`);
+}

@@ -11,6 +11,7 @@ on:
       - "capacitor.config.json"
       - "capacitor-web/**"
       - "scripts/prepare-android.mjs"
+      - "resources/**"
       - "package.json"
 
 permissions:

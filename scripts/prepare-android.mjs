@@ -1,7 +1,7 @@
 // Adjusts the Android project that `npx cap add android` generates: minimum SDK, Health Connect
 // permissions, the privacy policy link and the version number. Run from the repository root in CI.
 
-import { readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 
 const PRIVACY_URL = "https://calorie-tracker-gaondev.vercel.app/privacy";
 
@@ -49,3 +49,27 @@ update("android/app/build.gradle", (text) =>
     .replace(/versionCode\s+\d+/, `versionCode ${runNumber}`)
     .replace(/versionName\s+"[^"]*"/, `versionName "0.1.${runNumber}"`),
 );
+
+// App icon: pre-rendered PNGs from resources/android (see resources/icon.svg), plus an adaptive icon
+// whose background is the app's green.
+const RES = "android/app/src/main/res";
+for (const density of readdirSync("resources/android")) {
+  for (const file of readdirSync(`resources/android/${density}`)) {
+    mkdirSync(`${RES}/${density}`, { recursive: true });
+    copyFileSync(`resources/android/${density}/${file}`, `${RES}/${density}/${file}`);
+  }
+  console.log(`icons     ${RES}/${density}`);
+}
+writeFileSync(
+  `${RES}/values/ic_launcher_background.xml`,
+  `<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ic_launcher_background">#059669</color>\n</resources>\n`,
+);
+const adaptive = `<?xml version="1.0" encoding="utf-8"?>
+<adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+    <background android:drawable="@color/ic_launcher_background" />
+    <foreground android:drawable="@mipmap/ic_launcher_foreground" />
+</adaptive-icon>
+`;
+mkdirSync(`${RES}/mipmap-anydpi-v26`, { recursive: true });
+writeFileSync(`${RES}/mipmap-anydpi-v26/ic_launcher.xml`, adaptive);
+writeFileSync(`${RES}/mipmap-anydpi-v26/ic_launcher_round.xml`, adaptive);

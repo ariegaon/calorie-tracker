@@ -72,6 +72,28 @@ export default function LoginPage() {
     }
   }
 
+  async function sendReset() {
+    setError(null);
+    setInfo(null);
+    const cleanEmail = email.trim();
+    if (!/^\S+@\S+\.\S+$/.test(cleanEmail)) {
+      setError("הזן קודם את האימייל של החשבון, ואז לחץ שוב על \"שכחתי סיסמה\"");
+      return;
+    }
+    setBusy(true);
+    try {
+      const { error: resetError } = await getSupabase().auth.resetPasswordForEmail(cleanEmail, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (resetError) setError(translateAuthError(resetError.message));
+      else setInfo("אם קיים חשבון עם האימייל הזה, נשלח אליו קישור לבחירת סיסמה חדשה.");
+    } catch {
+      setError("אין חיבור לשרת. בדוק את החיבור לאינטרנט ונסה שוב");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   if (loading) return <FullPageMessage>טוען…</FullPageMessage>;
 
   return (
@@ -119,6 +141,17 @@ export default function LoginPage() {
           <Button type="submit" disabled={busy}>
             {busy ? "רגע…" : mode === "signin" ? "התחבר" : "צור חשבון"}
           </Button>
+
+          {mode === "signin" ? (
+            <button
+              type="button"
+              className="w-full text-center text-sm text-emerald-700 underline disabled:opacity-50"
+              disabled={busy}
+              onClick={sendReset}
+            >
+              שכחתי סיסמה
+            </button>
+          ) : null}
         </form>
       </Card>
 

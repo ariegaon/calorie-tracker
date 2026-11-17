@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
+  <g fill="none" stroke="#ffffff" stroke-linecap="round" stroke-linejoin="round">
+    <!-- post and base -->
+    <line x1="512" y1="300" x2="512" y2="740" stroke-width="44"/>
+    <line x1="392" y1="752" x2="632" y2="752" stroke-width="44"/>
+    <!-- beam, slightly tilted -->
+    <line x1="292" y1="330" x2="732" y2="300" stroke-width="40"/>
+    <circle cx="512" cy="300" r="34" fill="#ffffff" stroke="none"/>
+    <!-- left pan -->
+    <path d="M292 330 L222 500 M292 330 L362 500" stroke-width="18"/>
+    <path d="M200 500 Q292 590 384 500 Z" fill="#ffffff" stroke-width="18"/>
+    <!-- right pan -->
+    <path d="M732 300 L662 470 M732 300 L802 470" stroke-width="18"/>
+    <path d="M640 470 Q732 560 824 470 Z" fill="#ffffff" stroke-width="18"/>
+  </g>
+</svg>
