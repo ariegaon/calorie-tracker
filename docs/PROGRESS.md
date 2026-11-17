@@ -113,6 +113,10 @@
   קוד הסנכרון תומך ב-Apple Health: ספק `apple_health` (migration 0006), האנרגיה של האימון נשמרת כקלוריות פעילות,
   ומכיוון ש-HealthKit לא מדווח אם ניתנה הרשאת קריאה, האפליקציה זוכרת שביקשה (`apple-health:asked`). סך הכול 151 בדיקות עוברות.
   שום דבר מצד ה-iOS לא נבדק על מכשיר, והבנייה עצמה (archive, חתימה, העלאה) עוד לא רצה.
+- iOS (17.11.2026): ה-Secrets הוזנו. ריצה 2 נכשלה: חתימה אוטומטית בזמן archive דורשת מכשיר רשום. ריצה 3: זהות "Apple Distribution"
+  נדחתה (סותרת חתימה אוטומטית). ריצה 4 הצליחה: archive לא חתום (`CODE_SIGNING_ALLOWED=NO`), חתימת ad hoc עם `App.entitlements`,
+  ואז export בחתימה אוטומטית בענן (מפתח Admin) שומר את HealthKit. הגרסה הועלתה ל-TestFlight (build = מספר הריצה, 0.1.4).
+  נשאר: עיבוד ב-Apple, התקנה ראשונה אצל בודק פנימי, ואז קבוצת בודקים חיצונית (Beta App Review, נדרש חשבון דמו להתחברות).
 
 ## בעיות פתוחות
 
@@ -121,6 +125,7 @@
 - הקריאה ל-OpenAI עוד לא נבדקה מקצה לקצה (שם המודל, קלט תמונה). אם נכשלת: לבדוק runtime logs ב-Vercel.
 - אנדרואיד: ה-APK מעולם לא הורץ. לא נבדקו: מסך ההרשאות של Health Connect, קריאת האימונים בפועל, צילום ארוחה מתוך ה-WebView.
   לא ידוע אם `totalEnergyBurned` של התוסף באנדרואיד הוא קלוריות כוללות או פעילות; לאמת מול Samsung Health על אימון מוכר.
+- iOS: האייקון וה-splash הם ברירת המחדל של Capacitor; לפני בודקים חיצוניים כדאי אייקון אמיתי.
 - ההרשמה לאפליקציה פתוחה לכל אחד; מומלץ שהמשתמש יכבה הרשמות חדשות ב-Supabase Auth.
 - Site URL ב-Supabase Auth עדיין צריך להיות מוגדר לכתובת ה-Vercel (פעולה ידנית).
 - Vercel: משתני הסביבה הנדרשים הם `NEXT_PUBLIC_SUPABASE_URL` ו-`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. צוות: `gaondev` (`team_TEodwHOSdbadSdhdRcpQl4iu`).
