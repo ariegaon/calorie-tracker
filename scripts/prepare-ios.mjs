@@ -8,6 +8,9 @@ const RUN_NUMBER = Number(process.env.GITHUB_RUN_NUMBER ?? "1");
 if (TEAM_ID === "") throw new Error("APPLE_TEAM_ID is not set");
 
 const INFO_PLIST = "ios/App/App/Info.plist";
+// The version users see stays fixed, so TestFlight only needs Beta App Review once per version;
+// every build gets a new, increasing build number (the workflow run number) instead.
+const MARKETING_VERSION = "1.0";
 const ENTITLEMENTS = "ios/App/App/App.entitlements";
 const PROJECT = "ios/App/App.xcodeproj/project.pbxproj";
 
@@ -78,7 +81,7 @@ update(PROJECT, (text) => {
   console.log(`signing settings added to ${targets} build configurations`);
   return result
     .replace(/CURRENT_PROJECT_VERSION = [^;]*;/g, `CURRENT_PROJECT_VERSION = ${RUN_NUMBER};`)
-    .replace(/MARKETING_VERSION = [^;]*;/g, `MARKETING_VERSION = 0.1.${RUN_NUMBER};`);
+    .replace(/MARKETING_VERSION = [^;]*;/g, `MARKETING_VERSION = ${MARKETING_VERSION};`);
 });
 
 // App icon and launch image (see resources/icon.svg). Since Xcode 14 one 1024px icon is enough;

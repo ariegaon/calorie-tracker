@@ -10,6 +10,9 @@ name: iOS TestFlight
 #   ASC_PRIVATE_KEY   full text of the downloaded .p8 file, including the BEGIN and END lines
 on:
   workflow_dispatch:
+  # TestFlight builds expire 90 days after upload; a fresh build on the 1st of every month keeps testers going.
+  schedule:
+    - cron: "17 3 1 * *"
   push:
     branches: [main]
     paths:
