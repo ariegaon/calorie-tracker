@@ -1,7 +1,7 @@
 name: iOS TestFlight
 
 # Builds the iOS shell (Capacitor), signs it with the App Store Connect API key and uploads it to TestFlight.
-# The web app itself is served from Vercel, so this only needs to run when the shell changes.
+# The web app itself is served from Vercel, so this only needs to run when the shell changes (or by manual dispatch).
 #
 # Repository secrets required (Settings → Secrets and variables → Actions):
 #   APPLE_TEAM_ID     the 10-character Team ID of the Apple Developer account
