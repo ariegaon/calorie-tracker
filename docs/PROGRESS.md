@@ -118,6 +118,12 @@
   ואז export בחתימה אוטומטית בענן (מפתח Admin) שומר את HealthKit. הגרסה הועלתה ל-TestFlight (build = מספר הריצה, 0.1.4).
   נשאר: עיבוד ב-Apple, התקנה ראשונה אצל בודק פנימי, ואז קבוצת בודקים חיצונית (Beta App Review, נדרש חשבון דמו להתחברות).
 
+- 17.11.2026, לפני שיתוף עם חברים: איפוס סיסמה ("שכחתי סיסמה" במסך הכניסה → `/reset-password`), מחיקת חשבון מתוך מסך הפרופיל
+  (פונקציה `delete_own_account()`, migration 0007; כל הטבלאות נמחקות ב-cascade), קישור ה-APK מוצג רק באתר,
+  ואייקון מאזניים (iOS 1024 בלי שקיפות, אנדרואיד רגיל/עגול/adaptive, אתר) ומסך פתיחה ל-iOS. המקור ב-`resources/`.
+  בנייה iOS 5 עלתה ל-TestFlight ובנייה אנדרואיד 3 הצליחה. migration 0007 ממתין לאישור המשתמש בכלי של Supabase;
+  עד אז כפתור המחיקה מציג שגיאה ולא מוחק דבר.
+
 ## בעיות פתוחות
 
 - הפרויקט ב-Vercel אינו מקושר ל-Git (לאינטגרציית GitHub של Vercel אין גישה למאגר), ולכן אין פריסה אוטומטית בדחיפה.
@@ -125,7 +131,7 @@
 - הקריאה ל-OpenAI עוד לא נבדקה מקצה לקצה (שם המודל, קלט תמונה). אם נכשלת: לבדוק runtime logs ב-Vercel.
 - אנדרואיד: ה-APK מעולם לא הורץ. לא נבדקו: מסך ההרשאות של Health Connect, קריאת האימונים בפועל, צילום ארוחה מתוך ה-WebView.
   לא ידוע אם `totalEnergyBurned` של התוסף באנדרואיד הוא קלוריות כוללות או פעילות; לאמת מול Samsung Health על אימון מוכר.
-- iOS: האייקון וה-splash הם ברירת המחדל של Capacitor; לפני בודקים חיצוניים כדאי אייקון אמיתי.
+- Supabase Auth: ב-Redirect URLs צריך `https://calorie-tracker-gaondev.vercel.app/**` כדי שקישור איפוס הסיסמה יגיע ל-`/reset-password`.
 - ההרשמה לאפליקציה פתוחה לכל אחד; מומלץ שהמשתמש יכבה הרשמות חדשות ב-Supabase Auth.
 - Site URL ב-Supabase Auth עדיין צריך להיות מוגדר לכתובת ה-Vercel (פעולה ידנית).
 - Vercel: משתני הסביבה הנדרשים הם `NEXT_PUBLIC_SUPABASE_URL` ו-`NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY`. צוות: `gaondev` (`team_TEodwHOSdbadSdhdRcpQl4iu`).
