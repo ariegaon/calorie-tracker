@@ -1,0 +1,4 @@
+841:** ARCHIVE SUCCEEDED **
+853:** EXPORT SUCCEEDED **
+897:2026-11-17 18:48:27.555 xcodebuild[3637:14732] Progress 100%: Upload succeeded.
+899:** EXPORT SUCCEEDED **
