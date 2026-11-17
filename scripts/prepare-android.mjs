@@ -51,7 +51,7 @@ update("android/app/build.gradle", (text) =>
 );
 
 // App icon: pre-rendered PNGs from resources/android (see resources/icon.svg), plus an adaptive icon
-// whose background is the app's green.
+// whose background is the icon's blue (#0ea5e9).
 const RES = "android/app/src/main/res";
 for (const density of readdirSync("resources/android")) {
   for (const file of readdirSync(`resources/android/${density}`)) {
@@ -62,7 +62,7 @@ for (const density of readdirSync("resources/android")) {
 }
 writeFileSync(
   `${RES}/values/ic_launcher_background.xml`,
-  `<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ic_launcher_background">#059669</color>\n</resources>\n`,
+  `<?xml version="1.0" encoding="utf-8"?>\n<resources>\n    <color name="ic_launcher_background">#0ea5e9</color>\n</resources>\n`,
 );
 const adaptive = `<?xml version="1.0" encoding="utf-8"?>
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
