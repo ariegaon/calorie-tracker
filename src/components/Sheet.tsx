@@ -25,7 +25,7 @@ export function Sheet({ title, onClose, children }: { title: string; onClose: ()
         role="dialog"
         aria-modal="true"
         aria-label={title}
-        className="relative max-h-[92dvh] w-full max-w-md overflow-y-auto rounded-t-3xl bg-slate-50 px-4 pb-8 pt-4 shadow-xl"
+        className="relative max-h-[calc(100dvh-env(safe-area-inset-top)-1.5rem)] w-full max-w-md overflow-y-auto rounded-t-3xl bg-slate-50 px-4 pb-[calc(env(safe-area-inset-bottom)+2rem)] pt-4 shadow-xl"
       >
         <div className="mb-4 flex items-center justify-between gap-3">
           <h2 className="text-xl font-bold">{title}</h2>
