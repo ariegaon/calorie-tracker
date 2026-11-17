@@ -41,7 +41,7 @@ export function Field({
 }
 
 export function TextInput(props: InputHTMLAttributes<HTMLInputElement>) {
-  return <input {...props} className={controlClass} />;
+  return <input {...props} className={props.className ? `${controlClass} ${props.className}` : controlClass} />;
 }
 
 export function TextArea(props: TextareaHTMLAttributes<HTMLTextAreaElement>) {
