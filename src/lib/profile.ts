@@ -14,11 +14,18 @@ export type ProfileRow = {
   daily_protein_goal_g: number | null;
   daily_water_goal_ml: number;
   onboarding_completed_at: string | null;
+  /** yyyy-mm-dd. When set, the daily target comes from the target weight and this date, not the fixed pace. */
+  target_date: string | null;
+  /** Daily allowance for unlogged snacks; null or 0 is off. */
+  snack_allowance_kcal: number | null;
+  snack_allowance_source: "manual" | "suggested" | "ai" | null;
+  snack_allowance_note: string | null;
 };
 
 const COLUMNS =
   "user_id, display_name, sex_for_bmr, birth_date, height_cm, start_weight_kg, target_weight_kg, " +
-  "activity_factor, weekly_weight_change_goal_kg, daily_protein_goal_g, daily_water_goal_ml, onboarding_completed_at";
+  "activity_factor, weekly_weight_change_goal_kg, daily_protein_goal_g, daily_water_goal_ml, onboarding_completed_at, " +
+  "target_date, snack_allowance_kcal, snack_allowance_source, snack_allowance_note";
 
 export const ACTIVITY_OPTIONS = [
   { value: "1.2", label: "יושבנית", detail: "עבודה בישיבה, מעט הליכה" },
@@ -34,6 +41,9 @@ export const WEEKLY_GOAL_OPTIONS = [
   { value: "0.25", label: "עלייה של 0.25 ק\"ג בשבוע" },
 ] as const;
 
+/** The pace select's value for "reach the target weight by a date". */
+export const PACE_BY_DATE = "date";
+
 export const EMPTY_PROFILE_FORM: ProfileForm = {
   displayName: "",
   sexForBmr: "",
@@ -45,6 +55,7 @@ export const EMPTY_PROFILE_FORM: ProfileForm = {
   weeklyGoalKg: "-0.5",
   proteinGoalG: "",
   waterGoalMl: "2500",
+  targetDate: "",
 };
 
 function text(value: number | null): string {
@@ -60,9 +71,14 @@ export function profileRowToForm(row: ProfileRow): ProfileForm {
     startWeightKg: text(row.start_weight_kg),
     targetWeightKg: text(row.target_weight_kg),
     activityFactor: String(row.activity_factor),
-    weeklyGoalKg: row.weekly_weight_change_goal_kg === null ? "-0.5" : String(row.weekly_weight_change_goal_kg),
+    weeklyGoalKg: row.target_date
+      ? PACE_BY_DATE
+      : row.weekly_weight_change_goal_kg === null
+        ? "-0.5"
+        : String(row.weekly_weight_change_goal_kg),
     proteinGoalG: text(row.daily_protein_goal_g),
     waterGoalMl: String(row.daily_water_goal_ml),
+    targetDate: row.target_date ?? "",
   };
 }
 
@@ -95,6 +111,7 @@ export async function saveProfile(userId: string, values: ProfileValues, existin
       target_weight_kg: values.targetWeightKg,
       activity_factor: values.activityFactor,
       weekly_weight_change_goal_kg: values.weeklyGoalKg,
+      target_date: values.targetDate,
       daily_protein_goal_g: values.proteinGoalG,
       daily_water_goal_ml: values.waterGoalMl,
       onboarding_completed_at: existing?.onboarding_completed_at ?? new Date().toISOString(),
@@ -112,4 +129,24 @@ export async function saveProfile(userId: string, values: ProfileValues, existin
     });
     if (weightError) throw new Error(weightError.message);
   }
+}
+
+export type SnackAllowanceSetting = {
+  kcal: number | null;
+  source: "manual" | "suggested" | "ai" | null;
+  note: string | null;
+};
+
+/** Saves the unlogged-snack allowance (kcal null turns it off). */
+export async function saveSnackAllowance(userId: string, setting: SnackAllowanceSetting): Promise<void> {
+  const off = setting.kcal === null || setting.kcal <= 0;
+  const { error } = await getSupabase()
+    .from("profiles")
+    .update({
+      snack_allowance_kcal: off ? null : Math.round(setting.kcal as number),
+      snack_allowance_source: off ? null : setting.source,
+      snack_allowance_note: off ? null : setting.note,
+    })
+    .eq("user_id", userId);
+  if (error) throw new Error(error.message);
 }

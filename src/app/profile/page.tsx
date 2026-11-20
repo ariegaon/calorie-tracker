@@ -7,16 +7,19 @@ import { getSupabase } from "@/lib/supabase/client";
 import {
   ACTIVITY_OPTIONS,
   EMPTY_PROFILE_FORM,
+  PACE_BY_DATE,
   WEEKLY_GOAL_OPTIONS,
   loadProfile,
   profileRowToForm,
   saveProfile,
   type ProfileRow,
 } from "@/lib/profile";
-import { validateProfile, type ProfileErrors, type ProfileForm } from "@/lib/validation/profile";
+import { parseNumber, validateProfile, type ProfileErrors, type ProfileForm } from "@/lib/validation/profile";
 import { BottomNav } from "@/components/BottomNav";
 import { isNativeApp } from "@/lib/health/native";
 import { DeleteAccountCard } from "@/components/DeleteAccountCard";
+import { SnackAllowanceCard } from "@/components/SnackAllowanceCard";
+import { paceForTargetDate } from "@/lib/calculations/goal";
 import { Button, Card, Field, FullPageMessage, Notice, Select, TextInput } from "@/components/ui";
 
 export default function ProfilePage() {
@@ -207,8 +210,26 @@ export default function ProfilePage() {
                   {option.label}
                 </option>
               ))}
+              <option value={PACE_BY_DATE}>להגיע למשקל היעד עד תאריך שאבחר</option>
             </Select>
           </Field>
+
+          {form.weeklyGoalKg === PACE_BY_DATE ? (
+            <Field label="תאריך יעד" htmlFor="targetDate" error={errors.targetDate}>
+              <TextInput
+                id="targetDate"
+                type="date"
+                value={form.targetDate}
+                aria-invalid={Boolean(errors.targetDate)}
+                onChange={(e) => set("targetDate", e.target.value)}
+              />
+              <TargetDatePreview
+                currentKg={parseNumber(form.startWeightKg)}
+                targetKg={parseNumber(form.targetWeightKg)}
+                targetDate={form.targetDate}
+              />
+            </Field>
+          ) : null}
         </Card>
 
         <Card className="space-y-4">
@@ -294,8 +315,49 @@ export default function ProfilePage() {
         <p className="text-center text-xs text-slate-500">מחובר כ-{session?.user.email}</p>
       </div>
 
+      {!isOnboarding && existing && userId ? (
+        <SnackAllowanceCard
+          userId={userId}
+          profile={existing}
+          onSaved={(updated) => setExisting((current) => (current ? { ...current, ...updated } : current))}
+        />
+      ) : null}
+
       <DeleteAccountCard onDeleted={() => router.replace("/login")} />
       {!isOnboarding ? <BottomNav /> : null}
     </main>
   );
+}
+
+function formatDate(iso: string): string {
+  const [year, month, day] = iso.split("-");
+  return `${Number(day)}.${Number(month)}.${year}`;
+}
+
+/** What the chosen date means, from the weight in the form. The home screen recomputes it daily from the latest weigh-in. */
+function TargetDatePreview({
+  currentKg,
+  targetKg,
+  targetDate,
+}: {
+  currentKg: number | null;
+  targetKg: number | null;
+  targetDate: string;
+}) {
+  if (currentKg === null || targetKg === null || targetDate === "") return null;
+  const pace = paceForTargetDate(currentKg, targetKg, new Date(), targetDate);
+  const kg = (value: number) => Math.abs(value).toFixed(2);
+  let text: string;
+  let warn = false;
+  if (pace.status === "past") return null;
+  if (pace.status === "reached") text = "כבר הגעת למשקל היעד, ולכן היעד היומי יהיה שמירה על המשקל.";
+  else if (pace.status === "ok") {
+    text = `${pace.weeklyKg < 0 ? "ירידה" : "עלייה"} של ${kg(pace.weeklyKg)} ק"ג בשבוע. היעד היומי יתעדכן לבד לפי השקילות.`;
+  } else {
+    warn = true;
+    text =
+      `התאריך קרוב מדי: זה ${kg(pace.requestedWeeklyKg)} ק"ג בשבוע. ` +
+      `האפליקציה תתכנן לכל היותר ${kg(pace.weeklyKg)} ק"ג בשבוע, ובקצב הזה היעד יושג בערך ב-${formatDate(pace.realisticDate)}.`;
+  }
+  return <p className={"mt-1.5 text-sm " + (warn ? "font-medium text-amber-700" : "text-slate-600")}>{text}</p>;
 }

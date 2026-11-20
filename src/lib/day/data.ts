@@ -1,7 +1,7 @@
 // Reads and writes a day's entries in Supabase. Row level security limits every query to the signed-in user.
 
 import { getSupabase } from "@/lib/supabase/client";
-import { dayRangeIso } from "@/lib/day/dates";
+import { dayRangeIso, localDayKey } from "@/lib/day/dates";
 import type {
   ActivityRow,
   ActivityValues,
@@ -35,7 +35,7 @@ export async function loadDay(userId: string, day: Date): Promise<LoadedDay> {
   const previousFrom = new Date(new Date(from).getTime());
   previousFrom.setDate(previousFrom.getDate() - 1);
 
-  const [foods, drinks, activities, weights, latestWeight, previousFood] = await Promise.all([
+  const [foods, drinks, activities, weights, latestWeight, previousFood, snackSkip] = await Promise.all([
     supabase
       .from("food_entries")
       .select("id, consumed_at, name, meal_type, source, notes")
@@ -77,6 +77,7 @@ export async function loadDay(userId: string, day: Date): Promise<LoadedDay> {
       .gte("consumed_at", previousFrom.toISOString())
       .lt("consumed_at", from)
       .limit(1),
+    supabase.from("snack_allowance_skips").select("day").eq("user_id", userId).eq("day", localDayKey(day)).limit(1),
   ]);
 
   if (foods.error) fail(foods.error.message);
@@ -85,6 +86,7 @@ export async function loadDay(userId: string, day: Date): Promise<LoadedDay> {
   if (weights.error) fail(weights.error.message);
   if (latestWeight.error) fail(latestWeight.error.message);
   if (previousFood.error) fail(previousFood.error.message);
+  if (snackSkip.error) fail(snackSkip.error.message);
 
   const foodRows = (foods.data ?? []) as unknown as Omit<FoodRow, "items">[];
   let items: FoodItemRow[] = [];
@@ -111,7 +113,18 @@ export async function loadDay(userId: string, day: Date): Promise<LoadedDay> {
     latestWeightKg: latest.length > 0 ? Number(latest[0].weight_kg) : null,
     latestWeighInAt: latest.length > 0 ? latest[0].measured_at : null,
     previousDayHasFood: (previousFood.data ?? []).length > 0,
+    snackSkipped: (snackSkip.data ?? []).length > 0,
   };
+}
+
+/** Marks a day as fully logged (no snack allowance), or takes the mark away. */
+export async function setSnackSkipped(userId: string, day: Date, skipped: boolean): Promise<void> {
+  const supabase = getSupabase();
+  const key = localDayKey(day);
+  const { error } = skipped
+    ? await supabase.from("snack_allowance_skips").upsert({ user_id: userId, day: key }, { onConflict: "user_id,day", ignoreDuplicates: true })
+    : await supabase.from("snack_allowance_skips").delete().eq("user_id", userId).eq("day", key);
+  if (error) fail(error.message);
 }
 
 // ------------------------------------------------------------------ food

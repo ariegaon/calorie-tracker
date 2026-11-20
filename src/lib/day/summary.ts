@@ -7,6 +7,7 @@ import {
   type DailyBalance,
   type DayActivitySummary,
 } from "../calculations/energy.ts";
+import { snackAllowanceForDay } from "../calculations/goal.ts";
 import type { ActivityRow, DrinkRow, FoodRow, WeightRow } from "./entries.ts";
 import { MEAL_TYPE_LABELS } from "./entries.ts";
 
@@ -15,6 +16,8 @@ export type DayData = {
   drinks: DrinkRow[];
   activities: ActivityRow[];
   weights: WeightRow[];
+  /** The user marked this day as fully logged, so the unlogged-snack allowance is not added. */
+  snackSkipped?: boolean;
 };
 
 export type DaySummary = {
@@ -26,6 +29,8 @@ export type DaySummary = {
   hydrationMl: number;
   caffeineMg: number;
   activity: DayActivitySummary;
+  /** Allowance for unlogged snacks added on this day (an estimate; 0 when off, skipped or nothing logged). */
+  snackKcal: number;
   /** Null when the profile is missing what the expenditure estimate needs. */
   balance: DailyBalance | null;
   /** False while no food was logged: the balance is then not meaningful yet. */
@@ -41,7 +46,15 @@ function toActivityCalories(row: ActivityRow) {
   };
 }
 
-export function summarizeDay(data: DayData, energy: { bmr: number; baselineKcal: number } | null): DaySummary {
+/**
+ * `snackAllowanceKcal` is the user's daily allowance for unlogged snacks. It is added only on days with
+ * food logged: an empty day is not documented, and adding a guess to it would invent a whole day.
+ */
+export function summarizeDay(
+  data: DayData,
+  energy: { bmr: number; baselineKcal: number } | null,
+  snackAllowanceKcal: number | null = null,
+): DaySummary {
   let foodKcal = 0;
   let proteinG = 0;
   let carbsG = 0;
@@ -71,8 +84,15 @@ export function summarizeDay(data: DayData, energy: { bmr: number; baselineKcal:
   // and no balance is reported.
   const activity = sumActiveCalories(data.activities.map(toActivityCalories), energy?.bmr ?? 0);
 
+  const snackKcal = data.foods.length > 0 ? snackAllowanceForDay(snackAllowanceKcal, data.snackSkipped === true) : 0;
+
   const balance = energy
-    ? dailyBalance({ foodKcal, drinkKcal, baselineKcal: energy.baselineKcal, activeKcal: activity.activeKcal })
+    ? dailyBalance({
+        foodKcal: foodKcal + snackKcal,
+        drinkKcal,
+        baselineKcal: energy.baselineKcal,
+        activeKcal: activity.activeKcal,
+      })
     : null;
 
   return {
@@ -84,6 +104,7 @@ export function summarizeDay(data: DayData, energy: { bmr: number; baselineKcal:
     hydrationMl,
     caffeineMg,
     activity,
+    snackKcal,
     balance,
     hasFood: data.foods.length > 0,
   };

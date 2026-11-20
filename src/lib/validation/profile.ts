@@ -1,4 +1,6 @@
-// Pure validation of the profile form. No imports, so it runs under `node --test` as is.
+// Pure validation of the profile form. Only relative imports, so it runs under `node --test` as is.
+
+import { paceForTargetDate } from "../calculations/goal.ts";
 
 export type ProfileForm = {
   displayName: string;
@@ -11,6 +13,8 @@ export type ProfileForm = {
   weeklyGoalKg: string;
   proteinGoalG: string;
   waterGoalMl: string;
+  /** yyyy-mm-dd; used when weeklyGoalKg is "date". */
+  targetDate: string;
 };
 
 export type ProfileValues = {
@@ -21,7 +25,9 @@ export type ProfileValues = {
   startWeightKg: number;
   targetWeightKg: number;
   activityFactor: number;
+  /** With a target date: the pace the date implies today, stored as a fallback. */
   weeklyGoalKg: number;
+  targetDate: string | null;
   proteinGoalG: number | null;
   waterGoalMl: number;
 };
@@ -112,8 +118,21 @@ export function validateProfile(form: ProfileForm, today: Date = new Date()): Pr
     errors.activityFactor = "יש לבחור רמת פעילות";
   }
 
-  const weeklyGoal = parseNumber(form.weeklyGoalKg);
-  if (weeklyGoal === null || !WEEKLY_GOALS_KG.some((g) => g === weeklyGoal)) {
+  const byDate = form.weeklyGoalKg === "date";
+  let weeklyGoal = byDate ? null : parseNumber(form.weeklyGoalKg);
+  let targetDate: string | null = null;
+  if (byDate) {
+    if (form.targetDate.trim() === "") errors.targetDate = "יש לבחור תאריך יעד";
+    else if (!("error" in startWeight) && !("error" in targetWeight)) {
+      const pace = paceForTargetDate(startWeight.value, targetWeight.value, today, form.targetDate);
+      if (pace.status === "past") errors.targetDate = "תאריך היעד צריך להיות בעתיד";
+      else if (pace.daysLeft > 3 * 366) errors.targetDate = "עד 3 שנים קדימה";
+      else {
+        targetDate = form.targetDate;
+        weeklyGoal = Math.max(-1.5, Math.min(1.5, Math.round(pace.weeklyKg * 100) / 100));
+      }
+    }
+  } else if (weeklyGoal === null || !WEEKLY_GOALS_KG.some((g) => g === weeklyGoal)) {
     errors.weeklyGoalKg = "יש לבחור קצב";
   }
 
@@ -128,7 +147,7 @@ export function validateProfile(form: ProfileForm, today: Date = new Date()): Pr
   if ("error" in water) errors.waterGoalMl = water.error;
 
   // The chosen pace has to point toward the target weight.
-  if (!("error" in startWeight) && !("error" in targetWeight) && weeklyGoal !== null && !errors.weeklyGoalKg) {
+  if (!byDate && !("error" in startWeight) && !("error" in targetWeight) && weeklyGoal !== null && !errors.weeklyGoalKg) {
     const diff = targetWeight.value - startWeight.value;
     if (diff < 0 && weeklyGoal > 0) errors.weeklyGoalKg = "היעד נמוך מהמשקל הנוכחי, אז הקצב צריך להיות ירידה או שמירה";
     if (diff > 0 && weeklyGoal < 0) errors.weeklyGoalKg = "היעד גבוה מהמשקל הנוכחי, אז הקצב צריך להיות עלייה או שמירה";
@@ -147,6 +166,7 @@ export function validateProfile(form: ProfileForm, today: Date = new Date()): Pr
       targetWeightKg: (targetWeight as { value: number }).value,
       activityFactor: activityFactor as number,
       weeklyGoalKg: weeklyGoal as number,
+      targetDate,
       proteinGoalG: proteinGoal,
       waterGoalMl: Math.round((water as { value: number }).value),
     },

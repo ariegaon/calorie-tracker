@@ -5,10 +5,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth/AuthProvider";
 import { loadProfile, type ProfileRow } from "@/lib/profile";
-import { profileEnergy } from "@/lib/energy-profile";
+import { profileEnergy, type ProfileEnergy } from "@/lib/energy-profile";
 import { loadCalibrationAdjustment } from "@/lib/weight/extras-data";
 import { addDays, defaultEntryTime, formatDayLabel, formatTime, isSameDay, startOfDay } from "@/lib/day/dates";
-import { loadDay, saveDrink, type LoadedDay } from "@/lib/day/data";
+import { loadDay, saveDrink, setSnackSkipped, type LoadedDay } from "@/lib/day/data";
+import { remainingToday, snackAllowanceForDay } from "@/lib/calculations/goal";
 import { buildTimeline, summarizeDay, type TimelineEvent, type TimelineKind } from "@/lib/day/summary";
 import { activityIcon, type ActivityRow, type DrinkRow, type FoodRow, type WeightRow } from "@/lib/day/entries";
 import { Card, FullPageMessage, Notice } from "@/components/ui";
@@ -55,6 +56,32 @@ function sheetTitle(sheet: SheetState): string {
 
 function formatNumber(value: number): string {
   return Math.round(value).toLocaleString("he-IL");
+}
+
+function shortDate(iso: string): string {
+  const [year, month, dayOfMonth] = iso.split("-");
+  return `${Number(dayOfMonth)}.${Number(month)}.${year.slice(2)}`;
+}
+
+/** One line about the target date, when the pace comes from one. */
+function describeGoal(
+  pace: ProfileEnergy["goalPace"],
+  targetWeightKg: number | null,
+  targetDate: string | null,
+): { text: string; warn: boolean } | null {
+  if (!pace || targetWeightKg === null || !targetDate) return null;
+  const kg = (value: number) => Math.abs(value).toFixed(2);
+  const goal = `${Number(targetWeightKg)} ק"ג עד ${shortDate(targetDate)}`;
+  if (pace.status === "reached") return { text: `הגעת למשקל היעד. היעד היומי הוא עכשיו שמירה על המשקל.`, warn: false };
+  if (pace.status === "ok") {
+    return { text: `בדרך ל-${goal}: ${pace.weeklyKg < 0 ? "ירידה" : "עלייה"} של ${kg(pace.weeklyKg)} ק"ג בשבוע.`, warn: false };
+  }
+  return {
+    text:
+      `היעד ${goal} דורש ${kg(pace.requestedWeeklyKg)} ק"ג בשבוע, יותר מהקצב הבטוח. ` +
+      `היעד היומי מחושב לפי ${kg(pace.weeklyKg)} ק"ג בשבוע, ובקצב הזה תגיע ליעד בערך ב-${shortDate(pace.realisticDate)}.`,
+    warn: true,
+  };
 }
 
 function Row({ label, value, strong = false }: { label: string; value: string; strong?: boolean }) {
@@ -165,6 +192,7 @@ export default function HomePage() {
   const [actionError, setActionError] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const [snackBusy, setSnackBusy] = useState(false);
   const [sheet, setSheet] = useState<SheetState | null>(null);
   const [addingWater, setAddingWater] = useState(false);
   const [favorites, setFavorites] = useState<Favorite[]>([]);
@@ -269,7 +297,17 @@ export default function HomePage() {
   const weightKg =
     currentData.latestWeightKg ?? (profile.start_weight_kg === null ? null : Number(profile.start_weight_kg));
   const energy = profileEnergy(profile, weightKg, today, adjustment);
-  const summary = summarizeDay(currentData, energy ? { bmr: energy.bmr, baselineKcal: energy.baseline } : null);
+  const snackAllowance = profile.snack_allowance_kcal === null ? 0 : Number(profile.snack_allowance_kcal);
+  const summary = summarizeDay(
+    currentData,
+    energy ? { bmr: energy.bmr, baselineKcal: energy.baseline } : null,
+    snackAllowance,
+  );
+  // "Left to eat" reserves the snack allowance from the start of the day, before anything is logged.
+  const snackReserve = snackAllowanceForDay(snackAllowance, currentData.snackSkipped === true);
+  const eatenKcal = summary.foodKcal + summary.drinkKcal + snackReserve;
+  const remaining = energy ? remainingToday(energy.target.targetKcal, eatenKcal, summary.activity.activeKcal) : null;
+  const goalLine = energy ? describeGoal(energy.goalPace, profile.target_weight_kg, profile.target_date) : null;
   const timeline = buildTimeline(currentData, energy?.bmr ?? null);
   const balance = summary.balance;
 
@@ -298,6 +336,19 @@ export default function HomePage() {
       setActionError("הוספת המים נכשלה. בדוק את החיבור ונסה שוב.");
     } finally {
       setAddingWater(false);
+    }
+  }
+
+  async function toggleSnackSkip() {
+    setSnackBusy(true);
+    setActionError(null);
+    try {
+      await setSnackSkipped(currentUserId, day, currentData.snackSkipped !== true);
+      setReloadKey((key) => key + 1);
+    } catch {
+      setActionError("השמירה נכשלה. בדוק את החיבור ונסה שוב.");
+    } finally {
+      setSnackBusy(false);
     }
   }
 
@@ -423,48 +474,116 @@ export default function HomePage() {
 
       <div className={"space-y-4 transition-opacity " + (refreshing ? "opacity-60" : "")} aria-busy={refreshing}>
         <Card>
-          <h2 className="mb-1 text-sm font-semibold text-slate-600">מאזן קלורי (הערכה)</h2>
-          {balance && energy ? (
+          {energy && remaining ? (
             <>
-              <p className="mb-2 text-2xl font-bold">
-                <span aria-hidden="true">{balanceIcon} </span>
-                {balanceHeadline}
+              <h2 className="text-sm font-semibold text-slate-600">
+                {isToday ? "נשאר לאכול היום" : "נשאר לאכול ביום הזה"} (הערכה)
+              </h2>
+              <p className={"mt-1 text-4xl font-bold " + (remaining.remainingKcal < 0 ? "text-red-600" : "text-emerald-700")}>
+                {remaining.remainingKcal < 0
+                  ? `חרגת ב-${formatNumber(-remaining.remainingKcal)}`
+                  : formatNumber(remaining.remainingKcal)}{" "}
+                <span className="text-lg font-semibold">קק"ל</span>
               </p>
-              {!summary.hasFood ? (
-                <div className="mb-2">
-                  <Notice kind="info">עוד לא הוזן מזון ביום הזה, ולכן המאזן עדיין לא משקף את היום.</Notice>
-                </div>
-              ) : null}
-              <dl className="divide-y divide-slate-100">
-                <Row label="נצרך ממזון" value={`${formatNumber(summary.foodKcal)} קק"ל`} />
-                <Row label="נצרך ממשקאות" value={`${formatNumber(summary.drinkKcal)} קק"ל`} />
-                <Row label="סך הכול נצרך" value={`${formatNumber(balance.consumedKcal)} קק"ל`} strong />
-                <Row label="הוצאה בסיסית, בלי אימונים" value={`${formatNumber(energy.baseline)} קק"ל`} />
-                <Row label="אימונים (קלוריות פעילות)" value={`${formatNumber(summary.activity.activeKcal)} קק"ל`} />
-                <Row label="סך הכול הוצאה" value={`${formatNumber(balance.burnedKcal)} קק"ל`} strong />
-                <Row label="יעד צריכה ביום בלי אימון" value={`${formatNumber(energy.target.targetKcal)} קק"ל`} />
-              </dl>
-              {summary.activity.notSeparable > 0 ? (
-                <div className="mt-2">
-                  <Notice kind="info">
-                    {summary.activity.notSeparable === 1
-                      ? "פעילות אחת לא נספרה במאזן"
-                      : `${summary.activity.notSeparable} פעילויות לא נספרו במאזן`}
-                    . יש להן רק קלוריות כוללות בלי משך, ואי אפשר להפריד מהן את חלק המנוחה.
-                  </Notice>
-                </div>
-              ) : null}
-              <p className="mt-3 text-xs leading-relaxed text-slate-500">
-                ההוצאה הבסיסית מחושבת בנוסחת Mifflin-St Jeor לפי משקל של {weightKg} ק"ג, כפול רמת הפעילות היומיומית
-                שבחרת
-                {energy.adjustmentKcal !== 0
-                  ? `, ובתוספת הכיול האישי שאישרת (${energy.adjustmentKcal > 0 ? "+" : "−"}${Math.abs(energy.adjustmentKcal)} קק"ל ליום)`
+              <div
+                className="mt-3 h-3 w-full overflow-hidden rounded-full bg-slate-100"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={Math.round(remaining.budgetKcal)}
+                aria-valuenow={Math.round(eatenKcal)}
+                aria-label="נאכל מתוך היעד"
+              >
+                <div
+                  className={"h-full rounded-full " + (remaining.remainingKcal < 0 ? "bg-red-500" : "bg-emerald-500")}
+                  style={{ width: `${Math.min(100, (eatenKcal / Math.max(1, remaining.budgetKcal)) * 100)}%` }}
+                />
+              </div>
+              <p className="mt-2 text-sm text-slate-600">
+                נאכלו {formatNumber(eatenKcal)} מתוך {formatNumber(remaining.budgetKcal)} קק"ל
+                {remaining.workoutKcal > 0
+                  ? ` (יעד ${formatNumber(energy.target.targetKcal)} + ${formatNumber(remaining.workoutKcal)} מאימונים)`
                   : ""}
-                . המספרים הם הערכה ולא מדידה.
               </p>
+              {snackAllowance > 0 ? (
+                <div className="mt-2 flex flex-wrap items-center justify-between gap-2 text-sm text-slate-600">
+                  <span>
+                    {snackReserve > 0
+                      ? `כולל ${formatNumber(snackReserve)} קק"ל לנשנושים שלא נרשמו (הערכה)`
+                      : "בלי תוספת נשנושים היום"}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={snackBusy}
+                    onClick={() => void toggleSnackSkip()}
+                    className="font-medium text-emerald-700 underline disabled:opacity-50"
+                  >
+                    {snackReserve > 0 ? "היום רשמתי הכול" : "החזרת התוספת"}
+                  </button>
+                </div>
+              ) : null}
+              {goalLine ? (
+                <p className={"mt-2 text-sm " + (goalLine.warn ? "font-medium text-amber-700" : "text-slate-600")}>
+                  {goalLine.text}
+                </p>
+              ) : null}
+              {energy.target.limitedByMinimum ? (
+                <p className="mt-2 text-sm text-slate-600">
+                  היעד הועלה לרצפה הבטוחה של {formatNumber(energy.target.targetKcal)} קק"ל ביום, ולכן הירידה תהיה איטית
+                  מהמתוכנן.
+                </p>
+              ) : null}
+
+              <details className="mt-3 border-t border-slate-100 pt-3">
+                <summary className="cursor-pointer text-sm font-semibold text-slate-600">
+                  פירוט המאזן: {balance ? `${balanceIcon} ${balanceHeadline}` : ""}
+                </summary>
+                {balance ? (
+                  <>
+                    {!summary.hasFood ? (
+                      <div className="mt-2">
+                        <Notice kind="info">עוד לא הוזן מזון ביום הזה, ולכן המאזן עדיין לא משקף את היום.</Notice>
+                      </div>
+                    ) : null}
+                    <dl className="mt-2 divide-y divide-slate-100">
+                      <Row label="נצרך ממזון" value={`${formatNumber(summary.foodKcal)} קק"ל`} />
+                      <Row label="נצרך ממשקאות" value={`${formatNumber(summary.drinkKcal)} קק"ל`} />
+                      {summary.snackKcal > 0 ? (
+                        <Row label="נשנושים שלא נרשמו (הערכה)" value={`${formatNumber(summary.snackKcal)} קק"ל`} />
+                      ) : null}
+                      <Row label="סך הכול נצרך" value={`${formatNumber(balance.consumedKcal)} קק"ל`} strong />
+                      <Row label="הוצאה בסיסית, בלי אימונים" value={`${formatNumber(energy.baseline)} קק"ל`} />
+                      <Row label="אימונים (קלוריות פעילות)" value={`${formatNumber(summary.activity.activeKcal)} קק"ל`} />
+                      <Row label="סך הכול הוצאה" value={`${formatNumber(balance.burnedKcal)} קק"ל`} strong />
+                      <Row
+                        label={energy.goalPace ? "יעד צריכה ביום בלי אימון (לפי תאריך היעד)" : "יעד צריכה ביום בלי אימון"}
+                        value={`${formatNumber(energy.target.targetKcal)} קק"ל`}
+                      />
+                    </dl>
+                    {summary.activity.notSeparable > 0 ? (
+                      <div className="mt-2">
+                        <Notice kind="info">
+                          {summary.activity.notSeparable === 1
+                            ? "פעילות אחת לא נספרה במאזן"
+                            : `${summary.activity.notSeparable} פעילויות לא נספרו במאזן`}
+                          . יש להן רק קלוריות כוללות בלי משך, ואי אפשר להפריד מהן את חלק המנוחה.
+                        </Notice>
+                      </div>
+                    ) : null}
+                    <p className="mt-3 text-xs leading-relaxed text-slate-500">
+                      המאזן הוא מה שנאכל פחות מה שנשרף. היעד היומי הוא ההוצאה הבסיסית פחות הגירעון שמתאים לקצב שבחרת.
+                      ההוצאה הבסיסית מחושבת בנוסחת Mifflin-St Jeor לפי משקל של {weightKg} ק"ג, כפול רמת הפעילות
+                      היומיומית שבחרת
+                      {energy.adjustmentKcal !== 0
+                        ? `, ובתוספת הכיול האישי שאישרת (${energy.adjustmentKcal > 0 ? "+" : "−"}${Math.abs(energy.adjustmentKcal)} קק"ל ליום)`
+                        : ""}
+                      . קלוריות האימונים מתווספות למה שנשאר לאכול. המספרים הם הערכה ולא מדידה.
+                    </p>
+                  </>
+                ) : null}
+              </details>
             </>
           ) : (
-            <Notice kind="info">כדי לחשב מאזן חסרים פרטים בפרופיל: מין, תאריך לידה, גובה ומשקל.</Notice>
+            <Notice kind="info">כדי לחשב כמה נשאר לאכול חסרים פרטים בפרופיל: מין, תאריך לידה, גובה ומשקל.</Notice>
           )}
         </Card>
 

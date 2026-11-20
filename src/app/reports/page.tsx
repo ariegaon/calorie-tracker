@@ -162,6 +162,7 @@ export default function ReportsPage() {
     return buildReport({
       days: elapsed,
       energy,
+      snackAllowanceKcal: profile.snack_allowance_kcal === null ? null : Number(profile.snack_allowance_kcal),
       proteinGoalG: profile.daily_protein_goal_g === null ? null : Number(profile.daily_protein_goal_g),
       waterGoalMl: Number(profile.daily_water_goal_ml),
       weightAverage: movingAverage(daily),

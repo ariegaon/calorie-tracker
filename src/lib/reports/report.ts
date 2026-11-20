@@ -46,6 +46,8 @@ export type Report = {
 export function buildReport(input: {
   days: { day: number; data: DayData | null }[];
   energy: { bmr: number; baselineKcal: number } | null;
+  /** Daily allowance for unlogged snacks, added on documented days. */
+  snackAllowanceKcal?: number | null;
   proteinGoalG: number | null;
   waterGoalMl: number;
   /** Moving-average points, oldest first. Only those inside the range are used. */
@@ -62,8 +64,8 @@ export function buildReport(input: {
   const empty: DayData = { foods: [], drinks: [], activities: [], weights: [] };
   for (const { day, data } of input.days) {
     const dayData = data ?? empty;
-    const summary = summarizeDay(dayData, input.energy);
-    const consumed = summary.foodKcal + summary.drinkKcal;
+    const summary = summarizeDay(dayData, input.energy, input.snackAllowanceKcal ?? null);
+    const consumed = summary.foodKcal + summary.drinkKcal + summary.snackKcal;
     const burned = (input.energy?.baselineKcal ?? 0) + summary.activity.activeKcal;
     perDay.push({
       day,

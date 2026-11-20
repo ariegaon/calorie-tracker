@@ -16,6 +16,7 @@ const valid: ProfileForm = {
   weeklyGoalKg: "-0.5",
   proteinGoalG: "140",
   waterGoalMl: "2500",
+  targetDate: "",
 };
 
 test("parseNumber accepts dot and comma decimals and rejects junk", () => {
@@ -47,6 +48,7 @@ test("a valid form passes and values are converted to numbers", () => {
     targetWeightKg: 84,
     activityFactor: 1.35,
     weeklyGoalKg: -0.5,
+    targetDate: null,
     proteinGoalG: 140,
     waterGoalMl: 2500,
   });
@@ -96,4 +98,29 @@ test("pace must point toward the target weight", () => {
   assert.equal(lossWhileTargetHigher.ok, false);
 
   assert.equal(validateProfile({ ...valid, weeklyGoalKg: "0" }, TODAY).ok, true);
+});
+
+test("pace by target date: the date is required, must be ahead, and sets the pace it implies", () => {
+  const byDate = { ...valid, weeklyGoalKg: "date" };
+  const missing = validateProfile(byDate, TODAY);
+  assert.equal(missing.ok, false);
+  if (!missing.ok) assert.ok(missing.errors.targetDate);
+
+  const past = validateProfile({ ...byDate, targetDate: "2026-11-01" }, TODAY);
+  assert.equal(past.ok, false);
+  if (!past.ok) assert.equal(past.errors.targetDate, "תאריך היעד צריך להיות בעתיד");
+
+  assert.equal(validateProfile({ ...byDate, targetDate: "2031-01-01" }, TODAY).ok, false); // more than 3 years
+
+  // 90 -> 84 kg in 12 weeks: 0.5 kg a week
+  const ok = validateProfile({ ...byDate, targetDate: "2027-02-04" }, TODAY);
+  assert.equal(ok.ok, true);
+  if (ok.ok) {
+    assert.equal(ok.values.targetDate, "2027-02-04");
+    assert.equal(ok.values.weeklyGoalKg, -0.5);
+  }
+
+  // A fixed pace clears the date.
+  const fixed = validateProfile({ ...valid, targetDate: "2027-02-04" }, TODAY);
+  assert.equal(fixed.ok && fixed.values.targetDate, null);
 });

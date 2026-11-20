@@ -3,6 +3,7 @@
 import { getSupabase } from "@/lib/supabase/client";
 import type { ActivityRow, DrinkRow, FoodItemRow, FoodRow, WeightRow } from "@/lib/day/entries";
 import type { DayData } from "@/lib/day/summary";
+import { localDayKey } from "@/lib/day/dates";
 import { dateOfDay, dayIndex } from "@/lib/weight/trend";
 
 function fail(message: string): never {
@@ -17,7 +18,7 @@ export async function loadRangeDays(userId: string, firstDay: number, lastDay: n
   const from = dateOfDay(firstDay).toISOString();
   const to = dateOfDay(lastDay + 1).toISOString();
 
-  const [foods, drinks, activities, weights] = await Promise.all([
+  const [foods, drinks, activities, weights, skips] = await Promise.all([
     supabase
       .from("food_entries")
       .select("id, consumed_at, name, meal_type, source, notes")
@@ -49,11 +50,19 @@ export async function loadRangeDays(userId: string, firstDay: number, lastDay: n
       .gte("measured_at", from)
       .lt("measured_at", to)
       .limit(3000),
+    supabase
+      .from("snack_allowance_skips")
+      .select("day")
+      .eq("user_id", userId)
+      .gte("day", localDayKey(dateOfDay(firstDay)))
+      .lte("day", localDayKey(dateOfDay(lastDay)))
+      .limit(3000),
   ]);
   if (foods.error) fail(foods.error.message);
   if (drinks.error) fail(drinks.error.message);
   if (activities.error) fail(activities.error.message);
   if (weights.error) fail(weights.error.message);
+  if (skips.error) fail(skips.error.message);
 
   // Items are fetched through their entries' ids, in chunks to keep request URLs short.
   const foodRows = (foods.data ?? []) as unknown as Omit<FoodRow, "items">[];
@@ -88,7 +97,12 @@ export async function loadRangeDays(userId: string, firstDay: number, lastDay: n
   for (const row of (activities.data ?? []) as unknown as ActivityRow[]) bucket(row.started_at).activities.push(row);
   for (const row of (weights.data ?? []) as unknown as WeightRow[]) bucket(row.measured_at).weights.push(row);
 
+  const skipped = new Set(((skips.data ?? []) as { day: string }[]).map((row) => row.day));
   const result: RangeDay[] = [];
-  for (let day = firstDay; day <= lastDay; day += 1) result.push({ day, data: days.get(day) ?? null });
+  for (let day = firstDay; day <= lastDay; day += 1) {
+    const data = days.get(day) ?? null;
+    if (data && skipped.has(localDayKey(dateOfDay(day)))) data.snackSkipped = true;
+    result.push({ day, data });
+  }
   return result;
 }

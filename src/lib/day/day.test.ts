@@ -378,3 +378,15 @@ test("a workout with total calories keeps the watch's figure next to what the ba
   assert.equal(typed.reportedKcal, null);
   assert.equal(typed.kcal, -350);
 });
+
+test("the unlogged-snack allowance counts as eaten on logged days only, unless the day is marked as fully logged", () => {
+  const energy = { bmr: 1780, baselineKcal: 2136 };
+  const withSnacks = summarizeDay(day, energy, 150);
+  assert.equal(withSnacks.snackKcal, 150);
+  assert.equal(withSnacks.foodKcal, 1100); // the logged food is reported as is
+  assert.equal(withSnacks.balance?.consumedKcal, 1360);
+
+  assert.equal(summarizeDay({ ...day, snackSkipped: true }, energy, 150).snackKcal, 0);
+  assert.equal(summarizeDay({ ...day, foods: [] }, energy, 150).snackKcal, 0); // nothing logged: not documented
+  assert.equal(summarizeDay(day, energy).snackKcal, 0); // off
+});

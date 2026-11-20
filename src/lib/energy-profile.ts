@@ -2,6 +2,7 @@
 // One place for it, so the home screen, the weight screen and the reports always agree.
 
 import { baselineExpenditure, bmrMifflinStJeor, calorieTargetForPace, type CalorieTarget } from "@/lib/calculations/energy";
+import { paceForTargetDate, type PaceForDate } from "@/lib/calculations/goal";
 import type { ProfileRow } from "@/lib/profile";
 import { ageInYears } from "@/lib/validation/profile";
 import { calibratedBaseline } from "@/lib/weight/trend";
@@ -14,6 +15,10 @@ export type ProfileEnergy = {
   baseline: number;
   adjustmentKcal: number;
   target: CalorieTarget;
+  /** The weekly pace the target uses. */
+  weeklyGoalKg: number;
+  /** Set when the pace comes from a target date (null when a fixed pace is chosen or the date has passed). */
+  goalPace: Exclude<PaceForDate, { status: "past" }> | null;
 };
 
 export function profileEnergy(
@@ -28,6 +33,16 @@ export function profileEnergy(
   const bmr = bmrMifflinStJeor({ sex, weightKg, heightCm: Number(profile.height_cm), ageYears: age });
   const formulaBaseline = baselineExpenditure(bmr, Number(profile.activity_factor));
   const baseline = calibratedBaseline(formulaBaseline, bmr, adjustmentKcal);
-  const target = calorieTargetForPace(baseline, Number(profile.weekly_weight_change_goal_kg ?? 0), sex);
-  return { bmr, formulaBaseline, baseline, adjustmentKcal, target };
+  // With a target date the pace is recomputed every day from the latest weight, so it follows progress.
+  let goalPace: ProfileEnergy["goalPace"] = null;
+  let weeklyGoalKg = Number(profile.weekly_weight_change_goal_kg ?? 0);
+  if (profile.target_date && profile.target_weight_kg !== null) {
+    const pace = paceForTargetDate(weightKg, Number(profile.target_weight_kg), now, profile.target_date);
+    if (pace.status !== "past") {
+      goalPace = pace;
+      weeklyGoalKg = pace.weeklyKg;
+    }
+  }
+  const target = calorieTargetForPace(baseline, weeklyGoalKg, sex);
+  return { bmr, formulaBaseline, baseline, adjustmentKcal, target, weeklyGoalKg, goalPace };
 }

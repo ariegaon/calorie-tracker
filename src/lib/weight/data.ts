@@ -28,12 +28,13 @@ export async function loadDayBalances(
   userId: string,
   today: Date,
   energy: { bmr: number; baselineKcal: number },
+  snackAllowanceKcal: number | null = null,
 ): Promise<DayBalance[]> {
   const todayIndex = dayIndex(today);
   const days = await loadRangeDays(userId, todayIndex - BALANCE_HISTORY_DAYS + 1, todayIndex);
   return days.map(({ day, data }) => {
     if (!data) return { day, balanceKcal: 0, documented: false };
-    const summary = summarizeDay(data, energy);
+    const summary = summarizeDay(data, energy, snackAllowanceKcal);
     return { day, balanceKcal: summary.balance?.balanceKcal ?? 0, documented: summary.hasFood };
   });
 }

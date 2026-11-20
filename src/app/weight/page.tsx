@@ -177,7 +177,12 @@ export default function WeightPage() {
         const estimate = profileEnergy(profileRow, weightKg, today, adjustment);
         let dayBalances: DayBalance[] = [];
         if (estimate) {
-          dayBalances = await loadDayBalances(userId, today, { bmr: estimate.bmr, baselineKcal: estimate.baseline });
+          dayBalances = await loadDayBalances(
+            userId,
+            today,
+            { bmr: estimate.bmr, baselineKcal: estimate.baseline },
+            profileRow.snack_allowance_kcal === null ? null : Number(profileRow.snack_allowance_kcal),
+          );
           if (cancelled) return;
         }
 
