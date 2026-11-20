@@ -282,10 +282,43 @@ type Counted = {
  * Decides what to insert and what to stop counting. Only newly arrived workouts trigger a decision,
  * so a choice the user made by hand on existing activities is never overridden by a later sync.
  */
+/** How far apart a rewritten copy's start may be from the stored workout (seconds). */
+const REWRITE_START_TOLERANCE_S = 120;
+
+type Fingerprint = { provider: string | null; sourceApp: string | null; startMs: number; duration: number | null };
+
+function fingerprint(row: {
+  external_provider: string | null;
+  source_app?: string | null;
+  started_at: string;
+  duration_seconds: number | null;
+}): Fingerprint {
+  return {
+    provider: row.external_provider,
+    sourceApp: row.source_app ?? null,
+    startMs: new Date(row.started_at).getTime(),
+    duration: row.duration_seconds === null ? null : Number(row.duration_seconds),
+  };
+}
+
+/**
+ * Some apps (Strava in Apple Health) save the same workout again under a new id, for example after it
+ * is edited. Same provider, same source app, same start (±2 min) and about the same length is the
+ * same workout, so the copy is treated as already synced instead of being added again.
+ */
+export function isRewrittenCopy(a: Fingerprint, b: Fingerprint): boolean {
+  if (a.provider === null || a.provider !== b.provider) return false;
+  if (a.sourceApp === null || a.sourceApp !== b.sourceApp) return false;
+  if (Math.abs(a.startMs - b.startMs) > REWRITE_START_TOLERANCE_S * 1000) return false;
+  if (a.duration === null || b.duration === null) return a.duration === b.duration;
+  return Math.abs(a.duration - b.duration) <= Math.max(REWRITE_START_TOLERANCE_S, 0.05 * Math.max(a.duration, b.duration));
+}
+
 export function planNewActivities(candidates: SyncedActivityInsert[], existing: ExistingActivity[]): SyncPlan {
   const known = new Set(
     existing.filter((row) => row.external_provider !== null).map((row) => `${row.external_provider}:${row.external_activity_id}`),
   );
+  const seen: Fingerprint[] = existing.filter((row) => row.external_provider !== null).map(fingerprint);
   let counted: Counted[] = existing
     .filter((row) => !row.excluded_from_balance)
     .map((row) => ({ id: row.id, started_at: row.started_at, duration_seconds: row.duration_seconds, rank: sourceRank(row), planned: null }));
@@ -302,6 +335,12 @@ export function planNewActivities(candidates: SyncedActivityInsert[], existing: 
       continue;
     }
     known.add(key);
+    const print = fingerprint(candidate);
+    if (seen.some((other) => isRewrittenCopy(print, other))) {
+      alreadySynced += 1;
+      continue;
+    }
+    seen.push(print);
 
     const rank = sourceRank(candidate);
     const same = counted.filter((other) => isSameWorkout(candidate, other));

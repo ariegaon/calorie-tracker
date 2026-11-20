@@ -10,6 +10,7 @@ import {
   isSameWorkout,
   parseWorkout,
   planNewActivities,
+  isRewrittenCopy,
   planSync,
   sourceRank,
   stravaToActivity,
@@ -494,4 +495,50 @@ test("the same id from two providers is not mistaken for an already synced worko
   const plan = planNewActivities([workoutToActivity(workout, { provider: "apple_health" })], existing);
   assert.equal(plan.toInsert.length, 1);
   assert.equal(plan.alreadySynced, 0);
+});
+
+// Strava saves an edited workout to Apple Health again under a new id (seen on 19.11.2026: one run, three ids).
+test("a workout saved again under a new id by the same app is not added again", () => {
+  const strava = (id: string, start: string, duration: number) => ({
+    external_provider: "apple_health" as const,
+    external_activity_id: id,
+    source_app: "com.strava.stravaride",
+    activity_type: "ריצה",
+    started_at: start,
+    duration_seconds: duration,
+    distance_m: 7569,
+    calories_active_kcal: 698,
+    calories_total_kcal: null,
+    calories_source: "external" as const,
+    notes: null,
+  });
+  const stored: ExistingActivity = {
+    id: "s1",
+    started_at: at(10, 12),
+    duration_seconds: 4791,
+    external_provider: "apple_health",
+    external_activity_id: "94346AC9",
+    source_app: "com.strava.stravaride",
+    excluded_from_balance: false,
+  };
+  const plan = planNewActivities([strava("26014328", at(10, 12), 4791), strava("44DF89DF", at(10, 12), 4791)], [stored]);
+  assert.equal(plan.toInsert.length, 0);
+  assert.equal(plan.alreadySynced, 2);
+  assert.deepEqual(plan.excludeIds, []);
+
+  // Two copies arriving in the same sync: only the first is inserted.
+  const fresh = planNewActivities([strava("A", at(10, 12), 4791), strava("B", at(10, 13), 4800)], []);
+  assert.deepEqual(fresh.toInsert.map((row) => row.external_activity_id), ["A"]);
+  assert.equal(fresh.alreadySynced, 1);
+});
+
+test("rewritten-copy matching needs the same provider, app, start and length", () => {
+  const base = { provider: "apple_health", sourceApp: "com.strava.stravaride", startMs: Date.parse(at(10, 12)), duration: 4791 };
+  assert.equal(isRewrittenCopy(base, { ...base, startMs: base.startMs + 90_000 }), true);
+  assert.equal(isRewrittenCopy(base, { ...base, startMs: base.startMs + 180_000 }), false);
+  assert.equal(isRewrittenCopy(base, { ...base, duration: 3940 }), false); // a cropped or different workout
+  assert.equal(isRewrittenCopy(base, { ...base, sourceApp: "com.apple.health" }), false);
+  assert.equal(isRewrittenCopy(base, { ...base, provider: "health_connect" }), false);
+  assert.equal(isRewrittenCopy(base, { ...base, sourceApp: null }), false);
+  assert.equal(isRewrittenCopy({ ...base, provider: null }, { ...base, provider: null }), false); // manual entries are never merged
 });

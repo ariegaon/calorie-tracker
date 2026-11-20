@@ -15,7 +15,7 @@ import { runHealthSync, type SyncResult } from "@/lib/health/sync-data";
 
 const LAST_SYNC_KEY = "health-connect:last-sync";
 
-const AUTO_SYNC_INTERVAL_MS = 15 * 60 * 1000;
+const AUTO_SYNC_INTERVAL_MS = 5 * 60 * 1000;
 
 const timeFormat = new Intl.DateTimeFormat("he-IL", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 
@@ -88,8 +88,12 @@ export function HealthSyncCard({ userId, onSynced }: { userId: string; onSynced:
   const [lastSync, setLastSync] = useState<number | null>(null);
   const [caloriesMissing, setCaloriesMissing] = useState(false);
   const autoSynced = useRef(false);
+  const syncing = useRef(false);
+  const ready = useRef(false);
 
   const sync = useCallback(async () => {
+    if (syncing.current) return;
+    syncing.current = true;
     setBusy(true);
     setError(null);
     setMessage(null);
@@ -104,6 +108,7 @@ export function HealthSyncCard({ userId, onSynced }: { userId: string; onSynced:
     } catch {
       setError("הסנכרון נכשל. בדוק שיש חיבור לאינטרנט ושההרשאה לקריאת אימונים עדיין בתוקף.");
     } finally {
+      syncing.current = false;
       setBusy(false);
     }
   }, [userId, onSynced]);
@@ -118,6 +123,7 @@ export function HealthSyncCard({ userId, onSynced }: { userId: string; onSynced:
       .then((result) => {
         if (cancelled) return;
         setStatus(result);
+        ready.current = result.state === "ready";
         const last = readLastSync();
         const due = last === null || Date.now() - last > AUTO_SYNC_INTERVAL_MS;
         if (result.state === "ready" && due && !autoSynced.current) {
@@ -135,6 +141,20 @@ export function HealthSyncCard({ userId, onSynced }: { userId: string; onSynced:
     };
   }, [sync]);
 
+  // Returning to an app that stayed open in the background does not reload the page, so the sync
+  // above would not run again; a workout written to the health app meanwhile is picked up here.
+  useEffect(() => {
+    if (!isNativeApp()) return;
+    function onVisible() {
+      if (document.visibilityState !== "visible" || !ready.current) return;
+      const last = readLastSync();
+      if (last !== null && Date.now() - last <= AUTO_SYNC_INTERVAL_MS) return;
+      void sync();
+    }
+    document.addEventListener("visibilitychange", onVisible);
+    return () => document.removeEventListener("visibilitychange", onVisible);
+  }, [sync]);
+
   async function connect() {
     setBusy(true);
     setError(null);
@@ -142,6 +162,7 @@ export function HealthSyncCard({ userId, onSynced }: { userId: string; onSynced:
       const granted = await requestHealthAccess();
       if (granted) {
         setStatus({ state: "ready" });
+        ready.current = true;
         await sync();
       } else {
         setError("ההרשאה לקריאת אימונים לא ניתנה. אפשר לאשר אותה בהגדרות של אפליקציית הבריאות.");
