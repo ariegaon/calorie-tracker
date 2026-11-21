@@ -49,6 +49,34 @@ function ChangePasswordCard({ email }: { email: string | null }) {
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  async function sendReset() {
+    setError(null);
+    if (!email) {
+      setError("לא הצלחנו לזהות את החשבון. התחבר מחדש ונסה שוב.");
+      return;
+    }
+    setBusy(true);
+    try {
+      const { error: resetError } = await getSupabase().auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (resetError) {
+        setError(
+          resetError.message.toLowerCase().includes("rate limit")
+            ? "יותר מדי ניסיונות. נסה שוב בעוד כמה דקות"
+            : "שליחת המייל נכשלה. נסה שוב",
+        );
+        return;
+      }
+      close();
+      setNotice(`שלחנו קישור לבחירת סיסמה חדשה אל ${email}. הקישור נפתח בדפדפן; אחרי השמירה חוזרים לאפליקציה.`);
+    } catch {
+      setError("אין חיבור לשרת. בדוק את החיבור לאינטרנט ונסה שוב");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function close() {
     setOpen(false);
     setCurrent("");
@@ -140,6 +168,14 @@ function ChangePasswordCard({ email }: { email: string | null }) {
             value={current}
             onChange={(e) => setCurrent(e.target.value)}
           />
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void sendReset()}
+            className="text-sm font-medium text-emerald-700 underline disabled:opacity-50"
+          >
+            שכחתי את הסיסמה הנוכחית
+          </button>
         </Field>
         <Field label="סיסמה חדשה" htmlFor="new-password" hint="לפחות 8 תווים">
           <TextInput
@@ -167,7 +203,6 @@ function ChangePasswordCard({ email }: { email: string | null }) {
         <Button type="button" variant="ghost" disabled={busy} onClick={close}>
           ביטול
         </Button>
-        <p className="text-xs text-slate-500">שכחת את הסיסמה הנוכחית? התנתק ובחר "שכחתי סיסמה" במסך הכניסה.</p>
       </form>
     </Card>
   );
