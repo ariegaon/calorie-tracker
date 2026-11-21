@@ -7,7 +7,7 @@ const ITEMS = [
   { href: "/", label: "היום", icon: "🏠" },
   { href: "/weight", label: "משקל", icon: "📈" },
   { href: "/reports", label: "דוחות", icon: "📊" },
-  { href: "/profile", label: "פרופיל", icon: "⚙" },
+  { href: "/settings", label: "הגדרות", icon: "⚙" },
 ] as const;
 
 /** Fixed bottom navigation between the main screens. Pages that use it add bottom padding. */
@@ -20,7 +20,11 @@ export function BottomNav() {
     >
       <ul className="mx-auto flex max-w-md">
         {ITEMS.map((item) => {
-          const current = pathname === item.href;
+          // Settings covers its sub-pages and the profile, which is reached from it.
+          const current =
+            item.href === "/settings"
+              ? pathname === "/profile" || pathname === "/settings" || pathname.startsWith("/settings/")
+              : pathname === item.href;
           return (
             <li key={item.href} className="flex-1">
               <Link

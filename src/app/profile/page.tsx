@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState, type FormEvent } from "react";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth/AuthProvider";
-import { getSupabase } from "@/lib/supabase/client";
 import {
   ACTIVITY_OPTIONS,
   EMPTY_PROFILE_FORM,
@@ -16,9 +16,6 @@ import {
 } from "@/lib/profile";
 import { parseNumber, validateProfile, type ProfileErrors, type ProfileForm } from "@/lib/validation/profile";
 import { BottomNav } from "@/components/BottomNav";
-import { isNativeApp } from "@/lib/health/native";
-import { DeleteAccountCard } from "@/components/DeleteAccountCard";
-import { SnackAllowanceCard } from "@/components/SnackAllowanceCard";
 import { paceForTargetDate } from "@/lib/calculations/goal";
 import { Button, Card, Field, FullPageMessage, Notice, Select, TextInput } from "@/components/ui";
 
@@ -33,9 +30,6 @@ export default function ProfilePage() {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  // The APK link is only for the website; inside the installed app (and on an iPhone) it makes no sense.
-  const [showApkLink, setShowApkLink] = useState(false);
-  useEffect(() => setShowApkLink(!isNativeApp()), []);
   const [saveError, setSaveError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -91,20 +85,17 @@ export default function ProfilePage() {
     }
   }
 
-  async function signOut() {
-    try {
-      await getSupabase().auth.signOut();
-    } finally {
-      router.replace("/login");
-    }
-  }
-
   if (authLoading || loading) return <FullPageMessage>טוען…</FullPageMessage>;
   if (loadError) return <Notice kind="error">{loadError}</Notice>;
 
   return (
     <main className={isOnboarding ? "space-y-5" : "space-y-5 pb-20"}>
       <header className="space-y-1">
+        {!isOnboarding ? (
+          <Link href="/settings" className="text-sm font-medium text-emerald-700">
+            <span aria-hidden="true">→ </span>הגדרות
+          </Link>
+        ) : null}
         <h1 className="text-2xl font-bold">{isOnboarding ? "בוא נכיר" : "פרופיל ויעדים"}</h1>
         <p className="text-sm text-slate-600">
           {isOnboarding
@@ -292,38 +283,6 @@ export default function ProfilePage() {
         ) : null}
       </form>
 
-      {!isOnboarding && showApkLink ? (
-        <Card className="space-y-2">
-          <h2 className="font-semibold">אפליקציית אנדרואיד</h2>
-          <p className="text-sm text-slate-600">
-            האפליקציה המותקנת מסנכרנת אימונים מ-Samsung Health דרך Health Connect. מורידים את קובץ ה-APK ומתקינים אותו
-            בטלפון.
-          </p>
-          <a
-            href="https://github.com/ariegaon/calorie-tracker/releases/download/android-latest/calorie-tracker.apk"
-            className="flex min-h-12 w-full items-center justify-center rounded-xl border border-slate-300 bg-white px-4 text-base font-semibold text-slate-800 hover:bg-slate-100"
-          >
-            הורדת האפליקציה (APK)
-          </a>
-        </Card>
-      ) : null}
-
-      <div className="space-y-2 border-t border-slate-200 pt-4">
-        <Button type="button" variant="dangerGhost" onClick={signOut}>
-          התנתקות
-        </Button>
-        <p className="text-center text-xs text-slate-500">מחובר כ-{session?.user.email}</p>
-      </div>
-
-      {!isOnboarding && existing && userId ? (
-        <SnackAllowanceCard
-          userId={userId}
-          profile={existing}
-          onSaved={(updated) => setExisting((current) => (current ? { ...current, ...updated } : current))}
-        />
-      ) : null}
-
-      <DeleteAccountCard onDeleted={() => router.replace("/login")} />
       {!isOnboarding ? <BottomNav /> : null}
     </main>
   );
