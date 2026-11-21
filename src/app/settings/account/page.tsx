@@ -30,7 +30,7 @@ function Account({ email }: { email: string | null }) {
           {email}
         </p>
       </Card>
-      <ChangePasswordCard />
+      <ChangePasswordCard email={email} />
       <Button type="button" variant="dangerGhost" onClick={() => void signOut()}>
         התנתקות
       </Button>
@@ -39,39 +39,68 @@ function Account({ email }: { email: string | null }) {
   );
 }
 
-function ChangePasswordCard() {
+/** Collapsed to a link until asked for. The current password is checked before the new one is saved. */
+function ChangePasswordCard({ email }: { email: string | null }) {
+  const [open, setOpen] = useState(false);
+  const [current, setCurrent] = useState("");
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
 
+  function close() {
+    setOpen(false);
+    setCurrent("");
+    setPassword("");
+    setConfirm("");
+    setError(null);
+  }
+
   async function onSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
     setNotice(null);
+    if (!email) {
+      setError("לא הצלחנו לזהות את החשבון. התחבר מחדש ונסה שוב.");
+      return;
+    }
+    if (current === "") {
+      setError("יש להזין את הסיסמה הנוכחית");
+      return;
+    }
     if (password.length < 8) {
-      setError("הסיסמה צריכה להכיל לפחות 8 תווים");
+      setError("הסיסמה החדשה צריכה להכיל לפחות 8 תווים");
       return;
     }
     if (password !== confirm) {
-      setError("שתי הסיסמאות אינן זהות");
+      setError("שתי הסיסמאות החדשות אינן זהות");
+      return;
+    }
+    if (password === current) {
+      setError("הסיסמה החדשה זהה לנוכחית. בחר סיסמה אחרת");
       return;
     }
     setBusy(true);
     try {
-      const { error: updateError } = await getSupabase().auth.updateUser({ password });
-      if (updateError) {
+      const auth = getSupabase().auth;
+      // Proves the person holding the phone knows the password, not just that the app is signed in.
+      const { error: checkError } = await auth.signInWithPassword({ email, password: current });
+      if (checkError) {
         setError(
-          updateError.message.toLowerCase().includes("different")
-            ? "הסיסמה החדשה זהה לישנה. בחר סיסמה אחרת"
-            : "שמירת הסיסמה נכשלה. נסה שוב",
+          checkError.message.toLowerCase().includes("rate limit")
+            ? "יותר מדי ניסיונות. נסה שוב בעוד כמה דקות"
+            : "הסיסמה הנוכחית שגויה",
         );
-      } else {
-        setNotice("הסיסמה עודכנה.");
-        setPassword("");
-        setConfirm("");
+        return;
       }
+      const { error: updateError } = await auth.updateUser({ password });
+      if (updateError) {
+        setError("שמירת הסיסמה נכשלה. נסה שוב");
+        return;
+      }
+      close();
+      setNotice("הסיסמה עודכנה.");
     } catch {
       setError("אין חיבור לשרת. בדוק את החיבור לאינטרנט ונסה שוב");
     } finally {
@@ -79,12 +108,39 @@ function ChangePasswordCard() {
     }
   }
 
+  if (!open) {
+    return (
+      <div className="space-y-2">
+        {notice ? <Notice kind="success">{notice}</Notice> : null}
+        <button
+          type="button"
+          className="text-sm font-medium text-emerald-700 underline"
+          onClick={() => {
+            setNotice(null);
+            setOpen(true);
+          }}
+        >
+          החלפת סיסמה
+        </button>
+      </div>
+    );
+  }
+
   return (
     <Card>
       <form onSubmit={onSubmit} noValidate className="space-y-3">
         <h2 className="font-semibold">החלפת סיסמה</h2>
         {error ? <Notice kind="error">{error}</Notice> : null}
-        {notice ? <Notice kind="success">{notice}</Notice> : null}
+        <Field label="סיסמה נוכחית" htmlFor="current-password">
+          <TextInput
+            id="current-password"
+            type="password"
+            dir="ltr"
+            autoComplete="current-password"
+            value={current}
+            onChange={(e) => setCurrent(e.target.value)}
+          />
+        </Field>
         <Field label="סיסמה חדשה" htmlFor="new-password" hint="לפחות 8 תווים">
           <TextInput
             id="new-password"
@@ -95,7 +151,7 @@ function ChangePasswordCard() {
             onChange={(e) => setPassword(e.target.value)}
           />
         </Field>
-        <Field label="שוב, לאימות" htmlFor="confirm-new-password">
+        <Field label="סיסמה חדשה שוב, לאימות" htmlFor="confirm-new-password">
           <TextInput
             id="confirm-new-password"
             type="password"
@@ -105,9 +161,13 @@ function ChangePasswordCard() {
             onChange={(e) => setConfirm(e.target.value)}
           />
         </Field>
-        <Button type="submit" variant="secondary" disabled={busy}>
+        <Button type="submit" disabled={busy}>
           {busy ? "שומר…" : "שמירת הסיסמה"}
         </Button>
+        <Button type="button" variant="ghost" disabled={busy} onClick={close}>
+          ביטול
+        </Button>
+        <p className="text-xs text-slate-500">שכחת את הסיסמה הנוכחית? התנתק ובחר "שכחתי סיסמה" במסך הכניסה.</p>
       </form>
     </Card>
   );
