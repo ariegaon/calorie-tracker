@@ -97,7 +97,14 @@ export function activityIcon(activityType: string): string {
   return "🤸";
 }
 
-export const WEIGHT_CONDITIONS = ["בוקר, לפני אוכל", "אחרי אימון", "ערב", "אחר"] as const;
+export const WEIGHT_CONDITIONS = [
+  "בוקר, לפני אוכל",
+  "בוקר, אחרי אימון ולפני אוכל",
+  "אחרי אימון",
+  "ערב",
+  "ערב, אחרי אימון",
+  "אחר",
+] as const;
 
 export type DrinkPreset = {
   key: string;
