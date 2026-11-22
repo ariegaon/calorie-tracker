@@ -23,6 +23,7 @@ import { AnalyzeMeal } from "@/components/forms/AnalyzeMeal";
 import { BottomNav } from "@/components/BottomNav";
 import { HealthSyncCard } from "@/components/HealthSyncCard";
 import { HomeNotice, type NoticeItem } from "@/components/HomeNotice";
+import { loadUnseenInsight, maybeGenerateWeeklyInsight, type InsightRow } from "@/lib/insights/data";
 import { favoriteCalories, type Favorite } from "@/lib/favorites";
 import { deleteFavorite, loadFavorites, logFavorite } from "@/lib/favorites-data";
 import { buildInsights } from "@/lib/reports/report";
@@ -194,6 +195,27 @@ export default function HomePage() {
   const [refreshing, setRefreshing] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [snackBusy, setSnackBusy] = useState(false);
+  const [newInsight, setNewInsight] = useState<InsightRow | null>(null);
+
+  // This week's insight is prepared in the background; a new one shows as the line under the headline.
+  useEffect(() => {
+    if (!userId) return;
+    const id = userId;
+    let cancelled = false;
+    loadUnseenInsight(id)
+      .then((row) => {
+        if (!cancelled) setNewInsight(row);
+        return maybeGenerateWeeklyInsight(id);
+      })
+      .then((result) => (result === "created" ? loadUnseenInsight(id) : undefined))
+      .then((row) => {
+        if (!cancelled && row) setNewInsight(row);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
   const [sheet, setSheet] = useState<SheetState | null>(null);
   const [addingWater, setAddingWater] = useState(false);
   const [favorites, setFavorites] = useState<Favorite[]>([]);
@@ -395,11 +417,16 @@ export default function HomePage() {
     : [];
 
   const NOTICE_ICONS: Record<string, string> = { weigh_in: "⚖", yesterday_food: "🍽", hydration: "💧", protein: "🥩" };
-  const noticeItems: NoticeItem[] = insights.map((insight) => ({
-    key: insight.key,
-    icon: NOTICE_ICONS[insight.key] ?? "•",
-    text: insight.text,
-  }));
+  const noticeItems: NoticeItem[] = [
+    ...(newInsight
+      ? [{ key: `insight:${newInsight.id}`, icon: "💡", text: `תובנה חדשה: ${newInsight.title}`, href: "/insights" }]
+      : []),
+    ...insights.map((insight) => ({
+      key: insight.key,
+      icon: NOTICE_ICONS[insight.key] ?? "•",
+      text: insight.text,
+    })),
+  ];
 
   function openEvent(event: TimelineEvent) {
     if (event.kind === "food") {

@@ -8,6 +8,14 @@ import { getSupabase } from "@/lib/supabase/client";
 import { BottomNav } from "@/components/BottomNav";
 import { Card, FullPageMessage, Notice } from "@/components/ui";
 import { INSIGHT_WINDOW_DAYS, insightReadiness, MIN_LOGGED_DAYS, type Readiness } from "@/lib/insights/readiness";
+import {
+  loadInsights,
+  markInsightsSeen,
+  maybeGenerateWeeklyInsight,
+  setInsightFeedback,
+  type GenerationResult,
+  type InsightRow,
+} from "@/lib/insights/data";
 
 async function loadReadiness(userId: string): Promise<Readiness> {
   const since = new Date(Date.now() - INSIGHT_WINDOW_DAYS * 86_400_000).toISOString();
@@ -29,6 +37,8 @@ export default function InsightsPage() {
   const { session, loading } = useAuth();
   const userId = session?.user.id ?? null;
   const [readiness, setReadiness] = useState<Readiness | null>(null);
+  const [insights, setInsights] = useState<InsightRow[] | null>(null);
+  const [generation, setGeneration] = useState<GenerationResult | "running" | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
@@ -38,13 +48,34 @@ export default function InsightsPage() {
       return;
     }
     let cancelled = false;
-    loadReadiness(userId)
-      .then((result) => {
-        if (!cancelled) setReadiness(result);
-      })
-      .catch(() => {
-        if (!cancelled) setError("לא הצלחנו לטעון את הנתונים. בדוק את החיבור ונסה לרענן.");
-      });
+    const id = userId;
+    async function load() {
+      const [ready, list] = await Promise.all([loadReadiness(id), loadInsights(id)]);
+      if (cancelled) return;
+      setReadiness(ready);
+      setInsights(list);
+      const unseen = list.filter((row) => row.seen_at === null).map((row) => row.id);
+      void markInsightsSeen(id, unseen).catch(() => undefined);
+
+      // This week's insight, if one is due: the analysis runs here and takes a few seconds.
+      if (!ready.ready) return;
+      setGeneration("running");
+      const result = await maybeGenerateWeeklyInsight(id);
+      if (cancelled) return;
+      setGeneration(result);
+      if (result === "created") {
+        const fresh = await loadInsights(id);
+        if (cancelled) return;
+        setInsights(fresh);
+        void markInsightsSeen(
+          id,
+          fresh.filter((row) => row.seen_at === null).map((row) => row.id),
+        ).catch(() => undefined);
+      }
+    }
+    load().catch(() => {
+      if (!cancelled) setError("לא הצלחנו לטעון את הנתונים. בדוק את החיבור ונסה לרענן.");
+    });
     return () => {
       cancelled = true;
     };
@@ -91,13 +122,48 @@ export default function InsightsPage() {
         </Card>
       ) : null}
 
-      {readiness && readiness.ready ? (
+      {generation === "running" ? (
+        <p className="text-sm text-slate-600" role="status">
+          מנתח את הנתונים שלך…
+        </p>
+      ) : null}
+
+      {readiness?.ready && insights && insights.length === 0 && generation !== "running" ? (
         <Card className="space-y-2">
-          <h2 className="font-semibold">יש מספיק נתונים</h2>
+          <h2 className="font-semibold">עוד אין תובנה</h2>
           <p className="text-sm text-slate-700">
-            {readiness.loggedDays} ימי רישום ו-{readiness.weighIns} ימי שקילה בחודשיים האחרונים. התובנות יופיעו כאן בקרוב.
+            {generation === "nothing_found"
+              ? "בדקנו את הנתונים מהחודשיים האחרונים ולא מצאנו דפוס חזק מספיק כדי להציג. עדיף שתיקה מתובנה בינונית. נבדוק שוב בעוד יום-יומיים."
+              : generation === "failed"
+                ? "הניתוח לא הצליח הפעם. ננסה שוב כשתחזור לכאן."
+                : `${readiness.loggedDays} ימי רישום בחודשיים האחרונים. התובנה הראשונה תופיע כאן.`}
           </p>
         </Card>
+      ) : null}
+
+      {insights && insights.length > 0 ? (
+        <ul className="space-y-4">
+          {insights.map((insight, index) => (
+            <li key={insight.id}>
+              <InsightCard
+                insight={insight}
+                latest={index === 0}
+                onFeedback={(feedback) =>
+                  setInsights((current) =>
+                    current ? current.map((row) => (row.id === insight.id ? { ...row, feedback } : row)) : current,
+                  )
+                }
+              />
+            </li>
+          ))}
+        </ul>
+      ) : null}
+
+      {insights && insights.length > 0 ? (
+        <p className="text-xs leading-relaxed text-slate-500">
+          המספרים בתובנות מחושבים באפליקציה מהנתונים שלך. הניסוח נעשה בעזרת AI, שמקבל רק את התוצאות המחושבות. אלה הערכות,
+          לא ייעוץ רפואי.
+        </p>
       ) : null}
 
       <Link href="/reports" className="block text-sm font-medium text-emerald-700 underline">
@@ -106,5 +172,76 @@ export default function InsightsPage() {
 
       <BottomNav />
     </main>
+  );
+}
+
+const dateFormat = new Intl.DateTimeFormat("he-IL", { day: "numeric", month: "long" });
+
+function InsightCard({
+  insight,
+  latest,
+  onFeedback,
+}: {
+  insight: InsightRow;
+  latest: boolean;
+  onFeedback: (feedback: InsightRow["feedback"]) => void;
+}) {
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function give(feedback: "useful" | "not_relevant") {
+    const next = insight.feedback === feedback ? null : feedback;
+    setBusy(true);
+    setError(null);
+    try {
+      await setInsightFeedback(insight.id, next);
+      onFeedback(next);
+    } catch {
+      setError("השמירה נכשלה. נסה שוב.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const choice = (value: "useful" | "not_relevant", label: string) => (
+    <button
+      type="button"
+      disabled={busy}
+      aria-pressed={insight.feedback === value}
+      onClick={() => void give(value)}
+      className={
+        "min-h-10 rounded-full border px-4 text-sm font-medium disabled:opacity-60 " +
+        (insight.feedback === value
+          ? "border-emerald-600 bg-emerald-50 text-emerald-800"
+          : "border-slate-300 bg-white text-slate-700 hover:bg-slate-50")
+      }
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <Card className={"space-y-3 " + (latest ? "border-emerald-300" : "")}>
+      <p className="text-xs font-medium text-slate-500">
+        {latest ? "תובנת השבוע · " : ""}
+        {dateFormat.format(new Date(insight.created_at))}
+      </p>
+      <h2 className="text-lg font-bold leading-snug">{insight.title}</h2>
+      <p className="leading-relaxed text-slate-800">{insight.body}</p>
+      {insight.action ? (
+        <p className="rounded-xl bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+          <span className="font-semibold">הצעד הבא: </span>
+          {insight.action}
+        </p>
+      ) : null}
+      {error ? <Notice kind="error">{error}</Notice> : null}
+      <div className="flex flex-wrap gap-2">
+        {choice("useful", "מעניין")}
+        {choice("not_relevant", "לא רלוונטי")}
+      </div>
+      {insight.feedback === "not_relevant" ? (
+        <p className="text-xs text-slate-500">תובנות מהסוג הזה לא יוצגו לך יותר.</p>
+      ) : null}
+    </Card>
   );
 }

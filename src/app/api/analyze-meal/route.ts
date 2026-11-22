@@ -35,7 +35,8 @@ async function getUserId(access: SupabaseAccess): Promise<string | null> {
 async function countRecentUsage(access: SupabaseAccess): Promise<number | null> {
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString();
   const response = await fetch(
-    `${access.url}/rest/v1/ai_usage?select=id&created_at=gte.${encodeURIComponent(since)}`,
+    // Only meal analyses count toward this limit; insights and questions have their own.
+    `${access.url}/rest/v1/ai_usage?select=id&kind=in.(meal_text,meal_photo)&created_at=gte.${encodeURIComponent(since)}`,
     { headers: { ...supabaseHeaders(access), Prefer: "count=exact", Range: "0-0" }, cache: "no-store" },
   );
   if (!response.ok) return null;
