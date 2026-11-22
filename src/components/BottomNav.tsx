@@ -47,7 +47,9 @@ export function BottomNav() {
           const current =
             item.href === "/settings"
               ? pathname === "/profile" || pathname === "/settings" || pathname.startsWith("/settings/")
-              : pathname === item.href;
+              : item.href === "/insights"
+                ? pathname === "/insights" || pathname.startsWith("/insights/")
+                : pathname === item.href;
           return (
             <li key={item.href} className="flex-1">
               <Link

@@ -2,12 +2,13 @@
 // (read through row level security); only the resulting findings go to the server's AI editor.
 
 import { getSupabase } from "@/lib/supabase/client";
-import { loadProfile } from "@/lib/profile";
+import { loadProfile, type ProfileRow } from "@/lib/profile";
 import { profileEnergy } from "@/lib/energy-profile";
 import { loadCalibrationAdjustment } from "@/lib/weight/extras-data";
-import { loadRangeDays } from "@/lib/reports/data";
+import { loadRangeDays, type RangeDay } from "@/lib/reports/data";
 import { dayIndex } from "@/lib/weight/trend";
-import { buildDataset } from "@/lib/insights/dataset";
+import { buildDataset, type InsightDataset } from "@/lib/insights/dataset";
+import { buildQuestionContext } from "@/lib/insights/context";
 import { runAnalyses, type InsightKind } from "@/lib/insights/analyses";
 import { chooseCandidates, isInsightDue, type PastInsight } from "@/lib/insights/editor";
 import { INSIGHT_WINDOW_DAYS, MIN_LOGGED_DAYS } from "@/lib/insights/readiness";
@@ -68,6 +69,98 @@ export async function setInsightFeedback(id: string, feedback: "useful" | "not_r
   if (error) throw new Error(error.message);
 }
 
+// ------------------------------------------------------------------ the data the analyses work on
+
+type AnalysisInputs = {
+  profile: ProfileRow;
+  range: RangeDay[];
+  dataset: InsightDataset;
+  bmr: number;
+};
+
+async function loadAnalysisInputs(userId: string, now: Date): Promise<AnalysisInputs | null> {
+  const [profile, adjustment] = await Promise.all([loadProfile(userId), loadCalibrationAdjustment(userId)]);
+  if (!profile) return null;
+  const today = dayIndex(now);
+  const range = await loadRangeDays(userId, today - INSIGHT_WINDOW_DAYS + 1, today);
+
+  const lastWeight = [...range]
+    .reverse()
+    .flatMap(({ data }) => [...(data?.weights ?? [])].reverse())
+    .map((row) => Number(row.weight_kg))
+    .find((kg) => Number.isFinite(kg));
+  const weightKg = lastWeight ?? (profile.start_weight_kg === null ? null : Number(profile.start_weight_kg));
+  const energy = profileEnergy(profile, weightKg ?? null, now, adjustment);
+  if (!energy) return null;
+
+  const dataset = buildDataset({
+    range,
+    energy: { bmr: energy.bmr, baselineKcal: energy.baseline },
+    snackAllowanceKcal: profile.snack_allowance_kcal === null ? null : Number(profile.snack_allowance_kcal),
+    plan: {
+      targetKcal: energy.target.targetKcal,
+      plannedWeeklyKg: energy.weeklyGoalKg,
+      targetWeightKg: profile.target_weight_kg === null ? null : Number(profile.target_weight_kg),
+      targetDate: profile.target_date,
+      baselineKcal: energy.baseline,
+    },
+  });
+  return { profile, range, dataset, bmr: energy.bmr };
+}
+
+// ------------------------------------------------------------------ free questions
+
+export type QuestionRow = { id: string; created_at: string; question: string; answer: string };
+
+export async function loadQuestions(userId: string, limit = 30): Promise<QuestionRow[]> {
+  const { data, error } = await getSupabase()
+    .from("insight_questions")
+    .select("id, created_at, question, answer")
+    .eq("user_id", userId)
+    .order("created_at", { ascending: false })
+    .limit(limit);
+  if (error) throw new Error(error.message);
+  return ((data ?? []) as unknown as QuestionRow[]).reverse();
+}
+
+export async function clearQuestions(userId: string): Promise<void> {
+  const { error } = await getSupabase().from("insight_questions").delete().eq("user_id", userId);
+  if (error) throw new Error(error.message);
+}
+
+/** Sends the question with a summary of the last 60 days. Throws with a message for the user. */
+export async function askQuestion(
+  userId: string,
+  question: string,
+  history: { question: string; answer: string }[],
+  insightId: string | null,
+): Promise<string> {
+  const inputs = await loadAnalysisInputs(userId, new Date());
+  if (!inputs) throw new Error("חסרים פרטים בפרופיל (מין, תאריך לידה, גובה ומשקל) כדי לנתח את הנתונים.");
+  const context = buildQuestionContext({
+    range: inputs.range,
+    dataset: inputs.dataset,
+    findings: runAnalyses(inputs.dataset),
+    bmr: inputs.bmr,
+    snackAllowanceKcal: inputs.profile.snack_allowance_kcal === null ? null : Number(inputs.profile.snack_allowance_kcal),
+    sex: inputs.profile.sex_for_bmr,
+  });
+
+  const { data } = await getSupabase().auth.getSession();
+  const token = data.session?.access_token;
+  if (!token) throw new Error("ההתחברות פגה. התחבר מחדש ונסה שוב.");
+  const response = await fetch("/api/insights/ask", {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+    body: JSON.stringify({ question, context, history: history.slice(-4), insightId }),
+  });
+  const body = (await response.json().catch(() => null)) as { answer?: unknown; error?: unknown } | null;
+  if (!response.ok || typeof body?.answer !== "string") {
+    throw new Error(typeof body?.error === "string" ? body.error : "לא התקבלה תשובה. נסה שוב.");
+  }
+  return body.answer;
+}
+
 // ------------------------------------------------------------------ weekly generation
 
 const ATTEMPT_KEY = "insights:last-attempt";
@@ -114,32 +207,9 @@ async function generate(userId: string, force: boolean): Promise<GenerationResul
     if (!isInsightDue(history[0]?.created_at ?? null, new Date())) return "not_due";
 
     const now = new Date();
-    const [profile, adjustment] = await Promise.all([loadProfile(userId), loadCalibrationAdjustment(userId)]);
-    if (!profile) return "not_enough_data";
-    const today = dayIndex(now);
-    const range = await loadRangeDays(userId, today - INSIGHT_WINDOW_DAYS + 1, today);
-
-    const lastWeight = [...range]
-      .reverse()
-      .flatMap(({ data }) => data?.weights ?? [])
-      .map((row) => Number(row.weight_kg))
-      .find((kg) => Number.isFinite(kg));
-    const weightKg = lastWeight ?? (profile.start_weight_kg === null ? null : Number(profile.start_weight_kg));
-    const energy = profileEnergy(profile, weightKg ?? null, now, adjustment);
-    if (!energy) return "not_enough_data";
-
-    const dataset = buildDataset({
-      range,
-      energy: { bmr: energy.bmr, baselineKcal: energy.baseline },
-      snackAllowanceKcal: profile.snack_allowance_kcal === null ? null : Number(profile.snack_allowance_kcal),
-      plan: {
-        targetKcal: energy.target.targetKcal,
-        plannedWeeklyKg: energy.weeklyGoalKg,
-        targetWeightKg: profile.target_weight_kg === null ? null : Number(profile.target_weight_kg),
-        targetDate: profile.target_date,
-        baselineKcal: energy.baseline,
-      },
-    });
+    const inputs = await loadAnalysisInputs(userId, now);
+    if (!inputs) return "not_enough_data";
+    const { profile, dataset } = inputs;
     if (dataset.days.filter((day) => day.logged).length < MIN_LOGGED_DAYS) {
       markAttempt(userId);
       return "not_enough_data";
@@ -160,6 +230,7 @@ async function generate(userId: string, force: boolean): Promise<GenerationResul
         candidates,
         sex: profile.sex_for_bmr,
         likedKinds: [...new Set(past.filter((item) => item.feedback === "useful").map((item) => item.kind))],
+        useAi: profile.ai_insights_consent_at !== null,
       }),
     });
     if (response.status === 409) return "not_due";

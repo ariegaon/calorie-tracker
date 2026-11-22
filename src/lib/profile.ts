@@ -20,12 +20,14 @@ export type ProfileRow = {
   snack_allowance_kcal: number | null;
   snack_allowance_source: "manual" | "suggested" | "ai" | null;
   snack_allowance_note: string | null;
+  /** When the user agreed to send data summaries to the AI provider; null = not agreed. */
+  ai_insights_consent_at: string | null;
 };
 
 const COLUMNS =
   "user_id, display_name, sex_for_bmr, birth_date, height_cm, start_weight_kg, target_weight_kg, " +
   "activity_factor, weekly_weight_change_goal_kg, daily_protein_goal_g, daily_water_goal_ml, onboarding_completed_at, " +
-  "target_date, snack_allowance_kcal, snack_allowance_source, snack_allowance_note";
+  "target_date, snack_allowance_kcal, snack_allowance_source, snack_allowance_note, ai_insights_consent_at";
 
 export const ACTIVITY_OPTIONS = [
   { value: "1.2", label: "יושבנית", detail: "עבודה בישיבה, מעט הליכה" },
@@ -149,4 +151,12 @@ export async function saveSnackAllowance(userId: string, setting: SnackAllowance
     })
     .eq("user_id", userId);
   if (error) throw new Error(error.message);
+}
+
+/** Records (or withdraws) the consent to send data summaries to the AI provider. */
+export async function saveAiConsent(userId: string, agreed: boolean): Promise<string | null> {
+  const value = agreed ? new Date().toISOString() : null;
+  const { error } = await getSupabase().from("profiles").update({ ai_insights_consent_at: value }).eq("user_id", userId);
+  if (error) throw new Error(error.message);
+  return value;
 }

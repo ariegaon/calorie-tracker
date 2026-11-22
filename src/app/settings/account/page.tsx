@@ -1,17 +1,18 @@
 "use client";
 
 import { useRouter } from "next/navigation";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { SettingsShell } from "@/components/SettingsShell";
 import { DeleteAccountCard } from "@/components/DeleteAccountCard";
 import { Button, Card, Field, Notice, TextInput } from "@/components/ui";
 import { getSupabase } from "@/lib/supabase/client";
+import { loadProfile, saveAiConsent } from "@/lib/profile";
 
 export default function AccountPage() {
-  return <SettingsShell title="חשבון">{(_userId, email) => <Account email={email} />}</SettingsShell>;
+  return <SettingsShell title="חשבון">{(userId, email) => <Account userId={userId} email={email} />}</SettingsShell>;
 }
 
-function Account({ email }: { email: string | null }) {
+function Account({ userId, email }: { userId: string; email: string | null }) {
   const router = useRouter();
 
   async function signOut() {
@@ -31,6 +32,7 @@ function Account({ email }: { email: string | null }) {
         </p>
       </Card>
       <ChangePasswordCard email={email} />
+      <AiConsentCard userId={userId} />
       <Button type="button" variant="dangerGhost" onClick={() => void signOut()}>
         התנתקות
       </Button>
@@ -204,6 +206,55 @@ function ChangePasswordCard({ email }: { email: string | null }) {
           ביטול
         </Button>
       </form>
+    </Card>
+  );
+}
+
+/** Whether summaries of the user's data may be sent to the AI provider (questions, weekly wording). */
+function AiConsentCard({ userId }: { userId: string }) {
+  const [consent, setConsent] = useState<string | null | undefined>(undefined);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadProfile(userId)
+      .then((profile) => {
+        if (!cancelled) setConsent(profile?.ai_insights_consent_at ?? null);
+      })
+      .catch(() => {
+        if (!cancelled) setError("לא הצלחנו לטעון את ההגדרה.");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  async function toggle() {
+    setBusy(true);
+    setError(null);
+    try {
+      setConsent(await saveAiConsent(userId, consent === null));
+    } catch {
+      setError("השמירה נכשלה. נסה שוב.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  if (consent === undefined && !error) return null;
+  return (
+    <Card className="space-y-2">
+      <h2 className="font-semibold">שימוש ב-AI בתובנות</h2>
+      <p className="text-sm text-slate-600">
+        {consent
+          ? "מאושר: אפשר לשאול שאלות על הנתונים, ותובנת השבוע מנוסחת בעזרת AI. נשלחים סיכומים בלבד, בלי פרטים מזהים."
+          : "לא מאושר: אין שאלות חופשיות, ותובנת השבוע מוצגת בנוסח של האפליקציה בלי לשלוח דבר."}
+      </p>
+      {error ? <Notice kind="error">{error}</Notice> : null}
+      <Button type="button" variant="secondary" disabled={busy || consent === undefined} onClick={() => void toggle()}>
+        {busy ? "שומר…" : consent ? "ביטול האישור" : "אישור"}
+      </Button>
     </Card>
   );
 }

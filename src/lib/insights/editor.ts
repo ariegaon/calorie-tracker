@@ -53,6 +53,8 @@ export type ComposeRequest = {
   /** For Hebrew grammar: how to address the user. */
   sex: "male" | "female" | null;
   likedKinds: InsightKind[];
+  /** False when the user has not agreed to the AI: the finding's own wording is used and nothing is sent. */
+  useAi: boolean;
 };
 
 function cleanText(value: unknown, max: number): string | null {
@@ -100,7 +102,7 @@ export function validateComposeRequest(body: unknown): { ok: true; value: Compos
   const likedKinds = Array.isArray(record.likedKinds)
     ? (record.likedKinds as unknown[]).filter((kind): kind is InsightKind => INSIGHT_KINDS.includes(kind as InsightKind))
     : [];
-  return { ok: true, value: { candidates, sex, likedKinds } };
+  return { ok: true, value: { candidates, sex, likedKinds, useAi: record.useAi === true } };
 }
 
 // ------------------------------------------------------------------ the AI editor

@@ -84,16 +84,18 @@ export async function POST(request: Request): Promise<Response> {
     );
     if (!isInsightDue(latest[0]?.created_at ?? null, new Date())) return json(409, { error: "כבר יש תובנה לשבוע הזה" });
 
-    if ((await recentInsightUsage(access)) >= WEEKLY_EDITOR_LIMIT) {
-      return json(429, { error: "נוצרו כבר תובנות השבוע" });
+    if (validated.value.useAi) {
+      if ((await recentInsightUsage(access)) >= WEEKLY_EDITOR_LIMIT) {
+        return json(429, { error: "נוצרו כבר תובנות השבוע" });
+      }
+      await insertRows(access, "ai_usage", [{ user_id: access.userId, kind: "insight" }]);
     }
-    await insertRows(access, "ai_usage", [{ user_id: access.userId, kind: "insight" }]);
   } catch {
     return json(502, { error: "לא הצלחנו לבדוק את הנתונים. נסה שוב" });
   }
 
   // The AI editor words the finding; if it is unavailable the finding's own wording is used.
-  const fromAi = await compose(validated.value);
+  const fromAi = validated.value.useAi ? await compose(validated.value) : null;
   const insight = fromAi ?? templateInsight(validated.value.candidates);
   if (!insight) return json(500, { error: "לא נמצאה תובנה" });
   const facts = validated.value.candidates.find((candidate) => candidate.kind === insight.kind)?.facts ?? {};

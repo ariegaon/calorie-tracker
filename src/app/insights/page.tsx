@@ -92,6 +92,14 @@ export default function InsightsPage() {
         </p>
       </header>
 
+      <Link
+        href="/insights/ask"
+        className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl border border-emerald-600 bg-white px-4 text-base font-semibold text-emerald-700 hover:bg-emerald-50"
+      >
+        <span aria-hidden="true">💬</span>
+        שאל שאלה על הנתונים שלך
+      </Link>
+
       {error ? <Notice kind="error">{error}</Notice> : null}
 
       {readiness === null && !error ? <p className="text-slate-600">טוען…</p> : null}
@@ -235,9 +243,12 @@ function InsightCard({
         </p>
       ) : null}
       {error ? <Notice kind="error">{error}</Notice> : null}
-      <div className="flex flex-wrap gap-2">
+      <div className="flex flex-wrap items-center gap-2">
         {choice("useful", "מעניין")}
         {choice("not_relevant", "לא רלוונטי")}
+        <Link href={`/insights/ask?about=${insight.id}`} className="ms-auto text-sm font-medium text-emerald-700 underline">
+          ספר לי עוד
+        </Link>
       </div>
       {insight.feedback === "not_relevant" ? (
         <p className="text-xs text-slate-500">תובנות מהסוג הזה לא יוצגו לך יותר.</p>
