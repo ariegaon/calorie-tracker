@@ -77,6 +77,27 @@ function resultText(result: SyncResult, platform: HealthPlatform): string {
   return `${added}.${notes.length > 0 ? ` ${notes.join(". ")}.` : ""}${repairedNote}`;
 }
 
+/** One short line for the compact view after a sync that went fine. */
+function shortResultText(result: SyncResult): string {
+  if (result.inserted === 0) return result.repaired > 0 ? "עודכנו אימונים קיימים" : "אין אימונים חדשים";
+  return result.inserted === 1 ? "נוסף אימון אחד" : `נוספו ${result.inserted} אימונים`;
+}
+
+/** A sync that read nothing usable needs the full card and its explanation. */
+function isProblem(result: SyncResult): boolean {
+  return result.read === 0 || result.usable === 0;
+}
+
+function sinceText(time: number | null, now: number): string {
+  if (time === null) return "עוד לא סונכרן";
+  const minutes = Math.floor((now - time) / 60_000);
+  if (minutes < 1) return "סונכרן עכשיו";
+  if (minutes < 60) return `סונכרן לפני ${minutes} דק׳`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `סונכרן לפני ${hours} שע׳`;
+  return `סונכרן ב-${timeFormat.format(new Date(time))}`;
+}
+
 /** Shown only inside the Android app: connects to Health Connect and syncs workouts from it. */
 export function HealthSyncCard({ userId, onSynced }: { userId: string; onSynced: () => void }) {
   const [platform, setPlatform] = useState<HealthPlatform>("android");
@@ -87,6 +108,14 @@ export function HealthSyncCard({ userId, onSynced }: { userId: string; onSynced:
   const [error, setError] = useState<string | null>(null);
   const [lastSync, setLastSync] = useState<number | null>(null);
   const [caloriesMissing, setCaloriesMissing] = useState(false);
+  // Once connected and working, the card shrinks to one line; it opens on a problem or on a tap.
+  const [expanded, setExpanded] = useState(false);
+  const [shortMessage, setShortMessage] = useState<string | null>(null);
+  useEffect(() => {
+    if (!shortMessage) return;
+    const timer = window.setTimeout(() => setShortMessage(null), 8000);
+    return () => window.clearTimeout(timer);
+  }, [shortMessage]);
   const autoSynced = useRef(false);
   const syncing = useRef(false);
   const ready = useRef(false);
@@ -104,6 +133,8 @@ export function HealthSyncCard({ userId, onSynced }: { userId: string; onSynced:
       writeLastSync(now);
       setLastSync(now);
       setMessage(resultText(result, healthPlatform() ?? "android"));
+      setShortMessage(shortResultText(result));
+      if (isProblem(result)) setExpanded(true);
       if (result.inserted > 0 || result.replaced > 0 || result.repaired > 0) onSynced();
     } catch {
       setError("הסנכרון נכשל. בדוק שיש חיבור לאינטרנט ושההרשאה לקריאת אימונים עדיין בתוקף.");
@@ -176,9 +207,48 @@ export function HealthSyncCard({ userId, onSynced }: { userId: string; onSynced:
 
   if (!native) return null;
 
+  const compact = status?.state === "ready" && !expanded && !error && !caloriesMissing;
+  if (compact) {
+    return (
+      <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm">
+        <button
+          type="button"
+          onClick={() => setExpanded(true)}
+          className="min-h-9 flex-1 text-start text-slate-700"
+          aria-label={`פרטי הסנכרון עם ${STORE[platform].name}`}
+        >
+          <span aria-hidden="true">⌚ </span>
+          {STORE[platform].name} · {busy ? "מסנכרן…" : (shortMessage ?? sinceText(lastSync, Date.now()))}
+        </button>
+        <button
+          type="button"
+          onClick={() => void sync()}
+          disabled={busy}
+          className="min-h-9 rounded-lg px-2 font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+        >
+          סנכרון עכשיו
+        </button>
+      </div>
+    );
+  }
+
   return (
     <Card className="space-y-3">
-      <h2 className="font-semibold">⌚ {STORE[platform].title}</h2>
+      <div className="flex items-center justify-between gap-2">
+        <h2 className="font-semibold">⌚ {STORE[platform].title}</h2>
+        {status?.state === "ready" && !error && !caloriesMissing ? (
+          <button
+            type="button"
+            onClick={() => {
+              setExpanded(false);
+              setMessage(null);
+            }}
+            className="min-h-9 rounded-lg px-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50"
+          >
+            צמצום
+          </button>
+        ) : null}
+      </div>
 
       {status === null ? (
         <p className="text-sm text-slate-600">בודק את החיבור…</p>

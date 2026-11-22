@@ -22,6 +22,7 @@ import { MealForm } from "@/components/forms/MealForm";
 import { AnalyzeMeal } from "@/components/forms/AnalyzeMeal";
 import { BottomNav } from "@/components/BottomNav";
 import { HealthSyncCard } from "@/components/HealthSyncCard";
+import { HomeNotice, type NoticeItem } from "@/components/HomeNotice";
 import { favoriteCalories, type Favorite } from "@/lib/favorites";
 import { deleteFavorite, loadFavorites, logFavorite } from "@/lib/favorites-data";
 import { buildInsights } from "@/lib/reports/report";
@@ -393,6 +394,13 @@ export default function HomePage() {
       })
     : [];
 
+  const NOTICE_ICONS: Record<string, string> = { weigh_in: "⚖", yesterday_food: "🍽", hydration: "💧", protein: "🥩" };
+  const noticeItems: NoticeItem[] = insights.map((insight) => ({
+    key: insight.key,
+    icon: NOTICE_ICONS[insight.key] ?? "•",
+    text: insight.text,
+  }));
+
   function openEvent(event: TimelineEvent) {
     if (event.kind === "food") {
       const existing = currentData.foods.find((row) => row.id === event.id);
@@ -587,6 +595,8 @@ export default function HomePage() {
           )}
         </Card>
 
+        <HomeNotice items={noticeItems} />
+
         <button
           type="button"
           onClick={() => setSheet({ kind: "ai" })}
@@ -661,19 +671,6 @@ export default function HomePage() {
 
         <HealthSyncCard userId={currentUserId} onSynced={onHealthSynced} />
 
-        {insights.length > 0 ? (
-          <Card>
-            <h2 className="font-semibold">לתשומת לבך</h2>
-            <ul className="mt-2 space-y-2 text-sm text-slate-700">
-              {insights.map((insight) => (
-                <li key={insight.key} className="flex gap-2">
-                  <span aria-hidden="true">•</span>
-                  <span>{insight.text}</span>
-                </li>
-              ))}
-            </ul>
-          </Card>
-        ) : null}
 
         <Card className="space-y-4">
           <ProgressBar
