@@ -10,6 +10,7 @@ import { FullPageMessage } from "@/components/ui";
 const SECTIONS = [
   { href: "/profile", icon: "🎯", title: "פרופיל ויעדים", detail: "פרטים אישיים, משקל יעד, קצב או תאריך יעד, חלבון ומים" },
   { href: "/settings/adjustments", icon: "🧮", title: "התאמות לחישוב", detail: "נשנושים שלא נרשמו וכיול אישי" },
+  { href: "/settings/lists", icon: "📝", title: "רשימות שלי", detail: "תנאי שקילה: הוספה, עריכה, הסתרה וסדר" },
   { href: "/settings/connections", icon: "⌚", title: "חיבורים ואפליקציה", detail: "Apple Health, Health Connect והאפליקציה לטלפון" },
   { href: "/settings/account", icon: "👤", title: "חשבון", detail: "סיסמה, התנתקות ומחיקת חשבון" },
 ] as const;

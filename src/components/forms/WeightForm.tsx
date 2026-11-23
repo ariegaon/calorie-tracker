@@ -1,10 +1,18 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
-import { Field, Select, TextInput } from "@/components/ui";
+import { useEffect, useState, type FormEvent } from "react";
+import { Button, Field, Select, TextInput } from "@/components/ui";
 import { FormFooter } from "@/components/Sheet";
 import { defaultEntryTime, toLocalInputValue } from "@/lib/day/dates";
-import { WEIGHT_CONDITIONS, validateWeight, type WeightForm as WeightFormState, type WeightRow } from "@/lib/day/entries";
+import { validateWeight, type WeightForm as WeightFormState, type WeightRow } from "@/lib/day/entries";
+import {
+  DEFAULT_CONDITIONS,
+  NEW_CONDITION_OPTION,
+  conditionNameError,
+  conditionOptions as optionsFor,
+  type ConditionRow,
+} from "@/lib/conditions/conditions";
+import { addCondition, loadConditions } from "@/lib/conditions/data";
 import { deleteWeight, saveWeight } from "@/lib/day/data";
 
 function initialState(existing: WeightRow | null, day: Date): WeightFormState {
@@ -40,8 +48,52 @@ export function WeightForm({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const conditionOptions: string[] = [...WEIGHT_CONDITIONS];
-  if (form.conditions !== "" && !conditionOptions.includes(form.conditions)) conditionOptions.push(form.conditions);
+  // The user's own list; the defaults stand in until it loads (or if it cannot be loaded).
+  const [conditions, setConditions] = useState<ConditionRow[] | null>(null);
+  const [adding, setAdding] = useState(false);
+  const [newName, setNewName] = useState("");
+  const [newError, setNewError] = useState<string | null>(null);
+  const [addingBusy, setAddingBusy] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    loadConditions(userId)
+      .then((rows) => {
+        if (!cancelled) setConditions(rows);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
+
+  const conditionOptions =
+    conditions === null
+      ? optionsFor(DEFAULT_CONDITIONS.map((name, position) => ({ id: name, name, position, hidden: false })), form.conditions)
+      : optionsFor(conditions, form.conditions);
+
+  async function saveNewCondition() {
+    const rows = conditions ?? [];
+    const problem = conditionNameError(newName, rows);
+    if (problem) {
+      setNewError(problem);
+      return;
+    }
+    setAddingBusy(true);
+    setNewError(null);
+    try {
+      const position = rows.reduce((max, row) => Math.max(max, row.position), -1) + 1;
+      const row = await addCondition(userId, newName, position);
+      setConditions([...rows, row]);
+      set("conditions", row.name);
+      setAdding(false);
+      setNewName("");
+    } catch {
+      setNewError("השמירה נכשלה. נסה שוב.");
+    } finally {
+      setAddingBusy(false);
+    }
+  }
 
   function set(key: keyof WeightFormState, value: string) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -96,15 +148,64 @@ export function WeightForm({
         htmlFor="weight-conditions"
         hint="שקילה באותם תנאים בכל פעם, למשל בבוקר לפני אוכל, נותנת מגמה אמינה יותר."
       >
-        <Select id="weight-conditions" value={form.conditions} onChange={(e) => set("conditions", e.target.value)}>
+        <Select
+          id="weight-conditions"
+          value={adding ? NEW_CONDITION_OPTION : form.conditions}
+          onChange={(e) => {
+            if (e.target.value === NEW_CONDITION_OPTION) {
+              setAdding(true);
+              setNewError(null);
+              return;
+            }
+            setAdding(false);
+            set("conditions", e.target.value);
+          }}
+        >
           <option value="">לא צוין</option>
           {conditionOptions.map((option) => (
             <option key={option} value={option}>
               {option}
             </option>
           ))}
+          {conditions !== null ? <option value={NEW_CONDITION_OPTION}>+ תנאי חדש…</option> : null}
         </Select>
       </Field>
+
+      {adding ? (
+        <div className="space-y-2 rounded-xl border border-slate-200 bg-white p-3">
+          <Field label="שם התנאי החדש" htmlFor="new-condition" error={newError ?? undefined}>
+            <TextInput
+              id="new-condition"
+              maxLength={40}
+              autoFocus
+              placeholder="למשל: בוקר, אחרי שחייה"
+              value={newName}
+              onChange={(e) => {
+                setNewName(e.target.value);
+                setNewError(null);
+              }}
+            />
+          </Field>
+          <div className="grid grid-cols-2 gap-2">
+            <Button type="button" variant="secondary" disabled={addingBusy} onClick={() => void saveNewCondition()}>
+              {addingBusy ? "שומר…" : "הוספה"}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={addingBusy}
+              onClick={() => {
+                setAdding(false);
+                setNewName("");
+                setNewError(null);
+              }}
+            >
+              ביטול
+            </Button>
+          </div>
+          <p className="text-xs text-slate-500">את הרשימה אפשר לערוך בהגדרות ← רשימות שלי.</p>
+        </div>
+      ) : null}
 
       <Field label="מתי" htmlFor="weight-time" error={errors.dateTime}>
         <TextInput
