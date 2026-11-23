@@ -210,23 +210,30 @@ export function HealthSyncCard({ userId, onSynced }: { userId: string; onSynced:
   const compact = status?.state === "ready" && !expanded && !error && !caloriesMissing;
   if (compact) {
     return (
-      <div className="flex items-center gap-2 rounded-2xl border border-slate-200 bg-white px-3 py-2 text-sm shadow-sm">
+      <div className="flex items-center gap-3 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
         <button
           type="button"
           onClick={() => setExpanded(true)}
-          className="min-h-9 flex-1 text-start text-slate-700"
-          aria-label={`פרטי הסנכרון עם ${STORE[platform].name}`}
+          className="flex min-h-11 flex-1 items-center gap-3 text-start"
         >
-          <span aria-hidden="true">⌚ </span>
-          {STORE[platform].name} · {busy ? "מסנכרן…" : (shortMessage ?? sinceText(lastSync, Date.now()))}
+          <span aria-hidden="true" className="text-3xl leading-none">
+            ⌚
+          </span>
+          <span className="min-w-0">
+            <span className="block text-base font-semibold text-slate-900">{STORE[platform].name}</span>
+            <span className="block text-sm text-slate-600">
+              {busy ? "מסנכרן…" : (shortMessage ?? sinceText(lastSync, Date.now()))}
+            </span>
+            <span className="sr-only">. לחיצה פותחת את פרטי הסנכרון</span>
+          </span>
         </button>
         <button
           type="button"
           onClick={() => void sync()}
           disabled={busy}
-          className="min-h-9 rounded-lg px-2 font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-50"
+          className="flex min-h-11 shrink-0 items-center justify-center rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-100 disabled:opacity-60"
         >
-          סנכרון עכשיו
+          {busy ? "מסנכרן…" : "סנכרון עכשיו"}
         </button>
       </div>
     );
