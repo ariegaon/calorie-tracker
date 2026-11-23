@@ -105,15 +105,13 @@ function WeighInConditions({ userId }: { userId: string }) {
   }
 
   const iconButton =
-    "flex h-10 w-10 items-center justify-center rounded-lg border border-slate-300 bg-white text-slate-700 hover:bg-slate-100 disabled:opacity-40";
+    "flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-sm text-slate-700 hover:bg-slate-100 disabled:opacity-30";
 
   return (
     <Card className="space-y-3">
       <h2 className="font-semibold">תנאי שקילה</h2>
-      <p className="text-sm text-slate-600">
-        האפשרויות שמופיעות בטופס השקילה. שינוי שם חל גם על השקילות הקודמות, כדי שהמגמה לפי תנאי שקילה תישאר רציפה. תנאי
-        מוסתר לא מופיע בטופס, והשקילות הקודמות שומרות אותו.
-      </p>
+      <p className="text-sm text-slate-600">האפשרויות בטופס השקילה. שינוי שם חל גם על שקילות קודמות.</p>
+      <p className="text-xs text-slate-500">▲▼ סדר · ✎ שינוי שם · 🚫 הסתרה מהטופס (👁 החזרה)</p>
       {notice ? <Notice kind="success">{notice}</Notice> : null}
       {error ? <Notice kind="error">{error}</Notice> : null}
 
@@ -139,48 +137,58 @@ function WeighInConditions({ userId }: { userId: string }) {
                 </div>
               </div>
             ) : (
-              <div className="flex items-center gap-2">
-                <span className={"flex-1 " + (row.hidden ? "text-slate-400 line-through" : "text-slate-800")}>
+              <div className="flex items-center gap-3">
+                <span
+                  className={
+                    "min-w-0 flex-1 truncate " + (row.hidden ? "text-slate-400 line-through" : "font-medium text-slate-800")
+                  }
+                  title={row.name}
+                >
                   {row.name}
                 </span>
-                <button
-                  type="button"
-                  className={iconButton}
-                  disabled={busy || index === 0}
-                  aria-label={`להזיז למעלה: ${row.name}`}
-                  onClick={() => move(row, -1)}
-                >
-                  ▲
-                </button>
-                <button
-                  type="button"
-                  className={iconButton}
-                  disabled={busy || index === list.length - 1}
-                  aria-label={`להזיז למטה: ${row.name}`}
-                  onClick={() => move(row, 1)}
-                >
-                  ▼
-                </button>
-                <button
-                  type="button"
-                  className="min-h-10 rounded-lg px-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50 disabled:opacity-40"
-                  disabled={busy}
-                  onClick={() => {
-                    setEditingId(row.id);
-                    setEditName(row.name);
-                    setError(null);
-                  }}
-                >
-                  עריכה
-                </button>
-                <button
-                  type="button"
-                  className="min-h-10 rounded-lg px-2 text-sm font-semibold text-slate-600 hover:bg-slate-100 disabled:opacity-40"
-                  disabled={busy}
-                  onClick={() => toggleHidden(row)}
-                >
-                  {row.hidden ? "הצגה" : "הסתרה"}
-                </button>
+                <div className="flex shrink-0 items-center gap-1">
+                  <button
+                    type="button"
+                    className={iconButton}
+                    disabled={busy || index === 0}
+                    aria-label={`להזיז למעלה: ${row.name}`}
+                    onClick={() => move(row, -1)}
+                  >
+                    ▲
+                  </button>
+                  <button
+                    type="button"
+                    className={iconButton}
+                    disabled={busy || index === list.length - 1}
+                    aria-label={`להזיז למטה: ${row.name}`}
+                    onClick={() => move(row, 1)}
+                  >
+                    ▼
+                  </button>
+                  <button
+                    type="button"
+                    className={iconButton}
+                    disabled={busy}
+                    aria-label={`עריכת השם: ${row.name}`}
+                    onClick={() => {
+                      setEditingId(row.id);
+                      setEditName(row.name);
+                      setError(null);
+                    }}
+                  >
+                    ✎
+                  </button>
+                  <button
+                    type="button"
+                    className={iconButton}
+                    disabled={busy}
+                    aria-label={`${row.hidden ? "הצגה" : "הסתרה"}: ${row.name}`}
+                    aria-pressed={row.hidden}
+                    onClick={() => toggleHidden(row)}
+                  >
+                    {row.hidden ? "👁" : "🚫"}
+                  </button>
+                </div>
               </div>
             )}
           </li>
