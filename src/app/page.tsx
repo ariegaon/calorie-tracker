@@ -123,6 +123,34 @@ function ProgressBar({ label, value, goal, unit }: { label: string; value: numbe
   );
 }
 
+/** One of three equal tiles; a tile with a daily goal also shows "out of" and a thin bar. */
+function MacroTile({ label, grams, goal }: { label: string; grams: number; goal: number | null }) {
+  const percent = goal && goal > 0 ? Math.min(100, Math.round((grams / goal) * 100)) : null;
+  return (
+    <div className="flex flex-col justify-between gap-1 rounded-xl bg-slate-100 px-2 py-2">
+      <dt className="text-xs text-slate-600">{label}</dt>
+      <dd className="font-bold tabular-nums">
+        {formatNumber(grams)} גרם{percent !== null && percent >= 100 ? " ✓" : ""}
+      </dd>
+      {percent !== null && goal ? (
+        <dd className="space-y-1">
+          <span className="block text-xs tabular-nums text-slate-600">מתוך {formatNumber(goal)}</span>
+          <span
+            role="progressbar"
+            aria-label={`${label} מתוך היעד`}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={percent}
+            className="block h-1.5 overflow-hidden rounded-full bg-slate-200"
+          >
+            <span className="block h-full rounded-full bg-emerald-600" style={{ width: `${percent}%` }} />
+          </span>
+        </dd>
+      ) : null}
+    </div>
+  );
+}
+
 function ActionButton({ icon, label, onClick }: { icon: string; label: string; onClick: () => void }) {
   return (
     <button
@@ -699,22 +727,15 @@ export default function HomePage() {
         <HealthSyncCard userId={currentUserId} onSynced={onHealthSynced} />
 
 
-        <Card className="space-y-4">
-          <ProgressBar
-            label="חלבון"
-            value={summary.proteinG}
-            goal={profile.daily_protein_goal_g === null ? null : Number(profile.daily_protein_goal_g)}
-            unit="גרם"
-          />
-          <dl className="grid grid-cols-2 gap-3 text-center">
-            <div className="rounded-xl bg-slate-100 py-2">
-              <dt className="text-xs text-slate-600">פחמימות</dt>
-              <dd className="font-bold tabular-nums">{formatNumber(summary.carbsG)} גרם</dd>
-            </div>
-            <div className="rounded-xl bg-slate-100 py-2">
-              <dt className="text-xs text-slate-600">שומן</dt>
-              <dd className="font-bold tabular-nums">{formatNumber(summary.fatG)} גרם</dd>
-            </div>
+        <Card>
+          <dl className="grid grid-cols-3 gap-2 text-center">
+            <MacroTile
+              label="חלבון"
+              grams={summary.proteinG}
+              goal={profile.daily_protein_goal_g === null ? null : Number(profile.daily_protein_goal_g)}
+            />
+            <MacroTile label="פחמימות" grams={summary.carbsG} goal={null} />
+            <MacroTile label="שומן" grams={summary.fatG} goal={null} />
           </dl>
         </Card>
 
