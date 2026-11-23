@@ -105,19 +105,19 @@ function WeighInConditions({ userId }: { userId: string }) {
   }
 
   const iconButton =
-    "flex h-9 w-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-sm text-slate-700 hover:bg-slate-100 disabled:opacity-30";
+    "flex h-8 w-8 items-center justify-center rounded-md border border-slate-200 bg-white text-xs text-slate-700 hover:bg-slate-100 disabled:opacity-30";
 
   return (
     <Card className="space-y-3">
       <h2 className="font-semibold">תנאי שקילה</h2>
       <p className="text-sm text-slate-600">האפשרויות בטופס השקילה. שינוי שם חל גם על שקילות קודמות.</p>
-      <p className="text-xs text-slate-500">▲▼ סדר · ✎ שינוי שם · 🚫 הסתרה מהטופס (👁 החזרה)</p>
+      <p className="text-xs text-slate-500">▲▼ סדר · ✎ שם · 🚫 הסתרה · 👁 החזרה</p>
       {notice ? <Notice kind="success">{notice}</Notice> : null}
       {error ? <Notice kind="error">{error}</Notice> : null}
 
       <ul className="divide-y divide-slate-100">
         {list.map((row, index) => (
-          <li key={row.id} className="space-y-2 py-2">
+          <li key={row.id} className="space-y-2 py-1.5">
             {editingId === row.id ? (
               <div className="space-y-2">
                 <TextInput
@@ -140,13 +140,13 @@ function WeighInConditions({ userId }: { userId: string }) {
               <div className="flex items-center gap-3">
                 <span
                   className={
-                    "min-w-0 flex-1 truncate " + (row.hidden ? "text-slate-400 line-through" : "font-medium text-slate-800")
+                    "min-w-0 flex-1 truncate text-[15px] " + (row.hidden ? "text-slate-400 line-through" : "font-medium text-slate-800")
                   }
                   title={row.name}
                 >
                   {row.name}
                 </span>
-                <div className="flex shrink-0 items-center gap-1">
+                <div className="flex shrink-0 items-center gap-0.5">
                   <button
                     type="button"
                     className={iconButton}
