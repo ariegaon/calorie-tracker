@@ -6,7 +6,8 @@ import { loadProfile, type ProfileRow } from "@/lib/profile";
 import { profileEnergy } from "@/lib/energy-profile";
 import { loadCalibrationAdjustment } from "@/lib/weight/extras-data";
 import { loadRangeDays, type RangeDay } from "@/lib/reports/data";
-import { dayIndex } from "@/lib/weight/trend";
+import { dateOfDay, dayIndex } from "@/lib/weight/trend";
+import { loadMarksInRange } from "@/lib/tags/data";
 import { buildDataset, type InsightDataset } from "@/lib/insights/dataset";
 import { buildQuestionContext } from "@/lib/insights/context";
 import { runAnalyses, type InsightKind } from "@/lib/insights/analyses";
@@ -82,7 +83,17 @@ async function loadAnalysisInputs(userId: string, now: Date): Promise<AnalysisIn
   const [profile, adjustment] = await Promise.all([loadProfile(userId), loadCalibrationAdjustment(userId)]);
   if (!profile) return null;
   const today = dayIndex(now);
-  const range = await loadRangeDays(userId, today - INSIGHT_WINDOW_DAYS + 1, today);
+  const firstDay = today - INSIGHT_WINDOW_DAYS + 1;
+  const [range, marks] = await Promise.all([
+    loadRangeDays(userId, firstDay, today),
+    loadMarksInRange(userId, dateOfDay(firstDay), dateOfDay(today)).catch(() => new Map<string, string[]>()),
+  ]);
+  // Day tags arrive keyed yyyy-mm-dd; the analyses use day numbers.
+  const tagsByDay = new Map<number, string[]>();
+  for (const [key, names] of marks) {
+    const [year, month, date] = key.split("-").map(Number);
+    tagsByDay.set(dayIndex(new Date(year, month - 1, date)), names);
+  }
 
   const lastWeight = [...range]
     .reverse()
@@ -104,6 +115,7 @@ async function loadAnalysisInputs(userId: string, now: Date): Promise<AnalysisIn
       targetDate: profile.target_date,
       baselineKcal: energy.baseline,
     },
+    tagsByDay,
   });
   return { profile, range, dataset, bmr: energy.bmr };
 }

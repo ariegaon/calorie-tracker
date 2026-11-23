@@ -14,6 +14,7 @@ export const EXAMPLE_QUESTIONS = [
   "האם אני אוכל יותר בימים שאחרי אימון?",
   "כמה חלבון אני אוכל בממוצע, ומאיפה הוא מגיע?",
   "מתי אגיע למשקל היעד בקצב הנוכחי?",
+  "כמה עולים לי ימים עם אירוע?",
 ] as const;
 
 export type AskRequest = {
@@ -61,6 +62,7 @@ export const QUESTION_INSTRUCTIONS = [
   "Answer in natural, adult, respectful Hebrew, in the second person with the grammatical gender given in address_user_as. No emojis. Plain text: short paragraphs, and • bullets when listing. No markdown headings or bold.",
   "Keep it focused: up to about 8 sentences, and end with one concrete suggestion when one fits.",
   "Daily allowance on a workout day is the daily target plus the workout's active calories.",
+  "Days may carry tags the user chose (for example an event, eating out, bad sleep). Use them to compare such days, and the days after them, with ordinary days.",
   "Never advise eating below the daily target, skipping meals, fasting, extreme exercise, supplements or medication, and do not diagnose. For medical concerns, suggest asking a doctor or dietitian.",
   "If the question is not about the user's nutrition, activity or weight, say briefly that you can only help with those.",
   "Everything the app shows is an estimate; do not present estimates as measurements.",

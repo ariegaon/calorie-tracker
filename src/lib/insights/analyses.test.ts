@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import type { InsightDataset, InsightDay, InsightWeighIn } from "./dataset.ts";
 import {
+  dayTags,
   delayedCompensation,
   fitWithConditionOffsets,
   goalReality,
@@ -24,6 +25,7 @@ function dataset(days: Partial<InsightDay>[], weighIns: InsightWeighIn[] = [], i
     entries: 3,
     intakeKcal: 1800,
     workoutKcal: 0,
+    tags: [],
     ...day,
   }));
   return { firstDay: START, lastDay: START + days.length - 1, days: full, weighIns, items, plan };
@@ -137,4 +139,22 @@ test("blind spots: the scale shows a smaller loss than the log implies", () => {
 
 test("too little data gives no findings at all", () => {
   assert.deepEqual(runAnalyses(dataset(new Array(5).fill({}))), []);
+});
+
+test("day tags: a tag whose days and following days carry extra eating is found", () => {
+  // Every 7th day an "event" with +900, and +300 the day after.
+  const days: Partial<InsightDay>[] = new Array(42).fill(null).map((_, i) =>
+    i % 7 === 3 ? { intakeKcal: 2700, tags: ["אירוע"] } : i % 7 === 4 ? { intakeKcal: 2100 } : {},
+  );
+  const finding = dayTags(dataset(days));
+  assert.ok(finding);
+  assert.equal(finding.facts.tag, "אירוע");
+  assert.equal(finding.facts.extra_kcal_same_day, 900);
+  assert.equal(finding.facts.extra_kcal_next_day, 300);
+  assert.equal(finding.facts.tagged_days, 6);
+});
+
+test("day tags: a tag that changes nothing is not reported", () => {
+  const days: Partial<InsightDay>[] = new Array(42).fill(null).map((_, i) => (i % 7 === 3 ? { tags: ["חופשה"] } : {}));
+  assert.equal(dayTags(dataset(days)), null);
 });

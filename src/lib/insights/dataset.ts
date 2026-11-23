@@ -15,6 +15,8 @@ export type InsightDay = {
   intakeKcal: number;
   /** Active calories of the workouts that count. */
   workoutKcal: number;
+  /** The user's day tags marked on this day. */
+  tags: string[];
 };
 
 export type InsightWeighIn = { day: number; weightKg: number; condition: string | null };
@@ -56,6 +58,8 @@ export function buildDataset(input: {
   energy: { bmr: number; baselineKcal: number };
   snackAllowanceKcal: number | null;
   plan: InsightPlan;
+  /** Day tags by day number. */
+  tagsByDay?: Map<number, string[]>;
 }): InsightDataset {
   const days: InsightDay[] = [];
   const weighIns: InsightWeighIn[] = [];
@@ -72,8 +76,9 @@ export function buildDataset(input: {
 
   for (const { day, data } of input.range) {
     const weekday = dateOfDay(day).getDay();
+    const tags = input.tagsByDay?.get(day) ?? [];
     if (!data) {
-      days.push({ day, weekday, logged: false, entries: 0, intakeKcal: 0, workoutKcal: 0 });
+      days.push({ day, weekday, logged: false, entries: 0, intakeKcal: 0, workoutKcal: 0, tags });
       continue;
     }
     const summary = summarizeDay(data, input.energy, input.snackAllowanceKcal);
@@ -85,6 +90,7 @@ export function buildDataset(input: {
       entries: data.foods.length,
       intakeKcal: logged ? summary.foodKcal + summary.drinkKcal + summary.snackKcal : 0,
       workoutKcal: summary.activity.activeKcal,
+      tags,
     });
     if (logged) {
       for (const food of data.foods) for (const item of food.items) addItem(item.food_name, Number(item.calories_kcal), day);

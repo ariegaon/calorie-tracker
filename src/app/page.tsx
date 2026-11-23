@@ -23,6 +23,7 @@ import { AnalyzeMeal } from "@/components/forms/AnalyzeMeal";
 import { BottomNav } from "@/components/BottomNav";
 import { HealthSyncCard } from "@/components/HealthSyncCard";
 import { HomeNotice, type NoticeItem } from "@/components/HomeNotice";
+import { DayTagsRow } from "@/components/DayTagsRow";
 import { loadUnseenInsight, maybeGenerateWeeklyInsight, type InsightRow } from "@/lib/insights/data";
 import { favoriteCalories, type Favorite } from "@/lib/favorites";
 import { deleteFavorite, loadFavorites, logFavorite } from "@/lib/favorites-data";
@@ -723,6 +724,8 @@ export default function HomePage() {
             <p className="text-xs text-slate-500">לחיצה מוסיפה ליום שמוצג, בשעה הנוכחית. אפשר לערוך אחר כך מציר הזמן.</p>
           ) : null}
         </Card>
+
+        <DayTagsRow userId={currentUserId} day={day} />
 
         <HealthSyncCard userId={currentUserId} onSynced={onHealthSynced} />
 

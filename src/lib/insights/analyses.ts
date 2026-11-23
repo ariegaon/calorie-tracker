@@ -11,7 +11,8 @@ export type InsightKind =
   | "small_swap"
   | "goal_reality"
   | "outlier_days"
-  | "logging_blind_spots";
+  | "logging_blind_spots"
+  | "day_tags";
 
 export type Finding = {
   kind: InsightKind;
@@ -400,6 +401,60 @@ export function loggingBlindSpots(ds: InsightDataset): Finding | null {
   };
 }
 
+// ------------------------------------------------------------------ 7. what a tagged day does
+
+/** The tag whose days change intake the most, on the day itself and the day after. */
+export function dayTags(ds: InsightDataset): Finding | null {
+  const byDay = new Map(ds.days.map((day) => [day.day, day]));
+  const names = [...new Set(ds.days.flatMap((day) => day.tags))];
+  const weeks = Math.max(1, (ds.lastDay - ds.firstDay + 1) / 7);
+  let best: Finding | null = null;
+
+  for (const name of names) {
+    const marked = ds.days.filter((day) => day.logged && day.tags.includes(name));
+    if (marked.length < 3) continue;
+    const markedDays = new Set(ds.days.filter((day) => day.tags.includes(name)).map((day) => day.day));
+    // Ordinary days: logged, no tag at all, and not the day after this tag.
+    const ordinary = ds.days.filter(
+      (day) => day.logged && day.tags.length === 0 && !markedDays.has(day.day - 1),
+    );
+    if (ordinary.length < 7) continue;
+    const base = mean(ordinary.map((day) => day.intakeKcal));
+    const sameDay = mean(marked.map((day) => day.intakeKcal)) - base;
+    const after = [...markedDays]
+      .map((day) => byDay.get(day + 1))
+      .filter((day): day is InsightDay => day !== undefined && day.logged && !day.tags.includes(name));
+    const nextDay = after.length >= 2 ? mean(after.map((day) => day.intakeKcal)) - base : 0;
+    const strongest = Math.max(Math.abs(sameDay), Math.abs(nextDay));
+    if (strongest < 300) continue;
+
+    const perMonth = (markedDays.size / weeks) * 4.3;
+    const kgPerMonth = ((sameDay + nextDay) * perMonth) / KCAL_PER_KG;
+    const more = (kcal: number) => `${fmt(Math.abs(kcal))} קק"ל ${kcal >= 0 ? "יותר" : "פחות"}`;
+    const finding: Finding = {
+      kind: "day_tags",
+      strength: Math.min(1, strongest / 900),
+      title: `מה קורה בימים עם "${name}"`,
+      text:
+        `בימים עם "${name}" נאכלים בממוצע ${more(sameDay)} מבימים רגילים` +
+        (Math.abs(nextDay) >= 150 ? `, וביום שאחרי עוד ${more(nextDay)}` : "") +
+        `. זה קורה בערך ${perMonth.toFixed(1)} פעמים בחודש` +
+        (Math.abs(kgPerMonth) >= 0.1 ? `, ושווה כ-${Math.abs(kgPerMonth).toFixed(1)} ק"ג בחודש.` : "."),
+      facts: {
+        tag: name,
+        tagged_days: markedDays.size,
+        extra_kcal_same_day: round(sameDay),
+        extra_kcal_next_day: round(nextDay),
+        ordinary_day_intake_kcal: round(base),
+        times_per_month: Number(perMonth.toFixed(1)),
+        kg_per_month: Number(kgPerMonth.toFixed(2)),
+      },
+    };
+    if (!best || finding.strength > best.strength) best = finding;
+  }
+  return best;
+}
+
 // ------------------------------------------------------------------ all together
 
 const ANALYSES = [
@@ -409,6 +464,7 @@ const ANALYSES = [
   goalReality,
   outlierDays,
   loggingBlindSpots,
+  dayTags,
 ];
 
 /** Every finding that passed its thresholds, strongest first. */

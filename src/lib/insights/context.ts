@@ -84,6 +84,7 @@ export function buildQuestionContext(input: {
       intake_kcal: r(summary.intakeKcal),
       workout_kcal: r(summary.workoutKcal),
       entries: summary.entries,
+      ...(summary.tags.length > 0 ? { tags: summary.tags } : {}),
       ...(summary.logged ? { by_meal_kcal: byMeal } : {}),
     });
   }
