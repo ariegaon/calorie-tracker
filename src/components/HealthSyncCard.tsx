@@ -214,13 +214,13 @@ export function HealthSyncCard({ userId, onSynced }: { userId: string; onSynced:
         <button
           type="button"
           onClick={() => setExpanded(true)}
-          className="flex min-h-11 flex-1 items-center gap-3 text-start"
+          className="flex min-h-11 min-w-0 flex-1 items-center gap-2.5 text-start"
         >
-          <span aria-hidden="true" className="text-3xl leading-none">
+          <span aria-hidden="true" className="text-2xl leading-none">
             ⌚
           </span>
           <span className="min-w-0">
-            <span className="block text-base font-semibold text-slate-900">{STORE[platform].name}</span>
+            <span className="block whitespace-nowrap text-[15px] font-semibold text-slate-900">{STORE[platform].name}</span>
             <span className="block text-sm text-slate-600">
               {busy ? "מסנכרן…" : (shortMessage ?? sinceText(lastSync, Date.now()))}
             </span>
@@ -231,7 +231,7 @@ export function HealthSyncCard({ userId, onSynced }: { userId: string; onSynced:
           type="button"
           onClick={() => void sync()}
           disabled={busy}
-          className="flex min-h-11 shrink-0 items-center justify-center rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-800 hover:bg-slate-100 disabled:opacity-60"
+          className="flex min-h-10 shrink-0 items-center justify-center rounded-xl border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-800 hover:bg-slate-100 disabled:opacity-60"
         >
           {busy ? "מסנכרן…" : "סנכרון עכשיו"}
         </button>
