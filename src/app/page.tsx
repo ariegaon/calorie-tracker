@@ -6,7 +6,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth/AuthProvider";
 import { loadProfile, type ProfileRow } from "@/lib/profile";
 import { profileEnergy, type ProfileEnergy } from "@/lib/energy-profile";
-import { loadCalibrationAdjustment } from "@/lib/weight/extras-data";
+import { latestWaistMeasurementAt, loadCalibrationAdjustment } from "@/lib/weight/extras-data";
 import { addDays, defaultEntryTime, formatDayLabel, formatTime, isSameDay, startOfDay } from "@/lib/day/dates";
 import { loadDay, saveDrink, setSnackSkipped, type LoadedDay } from "@/lib/day/data";
 import { remainingToday, snackAllowanceForDay } from "@/lib/calculations/goal";
@@ -225,6 +225,21 @@ export default function HomePage() {
   const [reloadKey, setReloadKey] = useState(0);
   const [snackBusy, setSnackBusy] = useState(false);
   const [newInsight, setNewInsight] = useState<InsightRow | null>(null);
+  const [lastWaistAt, setLastWaistAt] = useState<string | null>(null);
+
+  // People who already measure their waist get a weekly reminder: it is the second signal beside the scale.
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    latestWaistMeasurementAt(userId)
+      .then((at) => {
+        if (!cancelled) setLastWaistAt(at);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
 
   // This week's insight is prepared in the background; a new one shows as the line under the headline.
   useEffect(() => {
@@ -449,6 +464,16 @@ export default function HomePage() {
   const noticeItems: NoticeItem[] = [
     ...(newInsight
       ? [{ key: `insight:${newInsight.id}`, icon: "💡", text: `תובנה חדשה: ${newInsight.title}`, href: "/insights" }]
+      : []),
+    ...(lastWaistAt && Date.now() - new Date(lastWaistAt).getTime() > 7 * 86_400_000
+      ? [
+          {
+            key: "waist",
+            icon: "📏",
+            text: "כדאי למדוד היקף מותניים השבוע. כך יודעים אם יורד שומן גם כשהמשקל עומד.",
+            href: "/weight",
+          },
+        ]
       : []),
     ...insights.map((insight) => ({
       key: insight.key,

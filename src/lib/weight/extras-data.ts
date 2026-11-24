@@ -163,3 +163,16 @@ export async function deleteBodyMeasurement(id: string): Promise<void> {
   const { error } = await getSupabase().from("body_measurements").delete().eq("id", id);
   if (error) fail(error.message);
 }
+
+/** When the waist was last measured; null if never. */
+export async function latestWaistMeasurementAt(userId: string): Promise<string | null> {
+  const { data, error } = await getSupabase()
+    .from("body_measurements")
+    .select("measured_at")
+    .eq("user_id", userId)
+    .not("waist_cm", "is", null)
+    .order("measured_at", { ascending: false })
+    .limit(1);
+  if (error) fail(error.message);
+  return ((data ?? []) as { measured_at: string }[])[0]?.measured_at ?? null;
+}

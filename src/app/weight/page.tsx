@@ -38,6 +38,7 @@ import {
   type DayBalance,
   type Estimate,
 } from "@/lib/weight/trend";
+import { compositionSignal, describeChange } from "@/lib/weight/composition";
 import { Button, Card, Field, FullPageMessage, Notice, TextInput } from "@/components/ui";
 import { Sheet } from "@/components/Sheet";
 import { WeightForm } from "@/components/forms/WeightForm";
@@ -138,6 +139,7 @@ export default function WeightPage() {
   const [sheet, setSheet] = useState<{ existing: WeightRow | null } | null>(null);
   const [calibrations, setCalibrations] = useState<CalibrationRow[]>([]);
   const [calibrationBusy, setCalibrationBusy] = useState(false);
+  const [calibrateAnyway, setCalibrateAnyway] = useState(false);
   const [calibrationError, setCalibrationError] = useState<string | null>(null);
   const [measurements, setMeasurements] = useState<BodyMeasurementRow[]>([]);
   const [measureSheet, setMeasureSheet] = useState<{ existing: BodyMeasurementRow | null } | null>(null);
@@ -296,6 +298,23 @@ export default function WeightPage() {
 
   const adjustment = calibrations.length > 0 ? Number(calibrations[0].adjustment_kcal) : 0;
   const suggested = calibration.status === "gap" ? suggestCalibration(calibration.gapKcalPerDay, adjustment) : null;
+  // The second signal: if the waist (or body fat) is clearly going down, a slow scale is not a reason
+  // to lower the expenditure estimate; water or some muscle can hide fat loss for weeks.
+  const composition = compositionSignal(
+    measurements.map((row) => ({
+      day: dayIndex(new Date(row.measured_at)),
+      waistCm: row.waist_cm === null ? null : Number(row.waist_cm),
+      bodyFatPercent: row.body_fat_percent === null ? null : Number(row.body_fat_percent),
+    })),
+    today,
+  );
+  const scaleSlowerThanPredicted = calibration.status === "gap" && calibration.gapKcalPerDay > 0;
+  const holdCalibration = scaleSlowerThanPredicted && composition.verdict === "fat_loss_likely" && !calibrateAnyway;
+  const secondSignalLine = composition.waist
+    ? `מותניים: ${composition.waist.latest} ס"מ, ${describeChange(composition.waist, 'ס"מ')}.`
+    : composition.bodyFat
+      ? `אחוז שומן: ${composition.bodyFat.latest}%, ${describeChange(composition.bodyFat, "נקודות אחוז")}.`
+      : null;
   const signedKcal = (value: number) => `${value > 0 ? "+" : value < 0 ? "−" : ""}${Math.abs(value)} קק"ל ליום`;
 
   async function applyCalibration(next: number, explanation: string) {
@@ -505,6 +524,7 @@ export default function WeightPage() {
 
       <Card>
         <h2 className="font-semibold">המשקל מול חישוב הקלוריות</h2>
+        {secondSignalLine ? <p className="mt-1 text-sm text-slate-600">{secondSignalLine}</p> : null}
         {calibration.status === "insufficient" ? (
           <p className="mt-2 text-sm text-slate-600">
             המערכת עדיין לומדת. להשוואה נדרשים {MIN_CALIBRATION_SPAN_DAYS} ימים של שקילות (לפחות{" "}
@@ -526,7 +546,29 @@ export default function WeightPage() {
               הסיבות הנפוצות, לפי הסדר: רישום מזון חלקי או הערכות כמות לא מדויקות, קלוריות אימון מוערכות ביתר או בחסר,
               ותנודות נוזלים. זה לא אומר שחילוף החומרים השתנה. האפליקציה לא משנה דבר בלי אישורך.
             </p>
-            {suggested !== null ? (
+            {scaleSlowerThanPredicted && composition.verdict === "fat_loss_likely" ? (
+              <div className="mt-3 space-y-2 rounded-xl bg-emerald-50 px-3 py-2">
+                <p className="text-sm text-emerald-900">
+                  אבל {composition.source === "waist" ? "המותניים" : "אחוז השומן"} יורדים: {secondSignalLine} כנראה יש
+                  אובדן שומן, והמשקל מתעכב בגלל מים או מעט שריר. לא מומלץ להוריד את היעד עכשיו.
+                </p>
+                {!calibrateAnyway && suggested !== null ? (
+                  <button
+                    type="button"
+                    className="text-xs text-slate-600 underline"
+                    onClick={() => setCalibrateAnyway(true)}
+                  >
+                    לכייל בכל זאת
+                  </button>
+                ) : null}
+              </div>
+            ) : scaleSlowerThanPredicted && composition.verdict === "not_enough_data" ? (
+              <p className="mt-2 text-sm text-slate-700">
+                לפני שמחליטים: כדאי למדוד היקף מותניים פעם בשבוע, במשך 3 שבועות. אם המותניים יורדים, הפער כנראה לא נובע
+                מאוכל שלא נרשם.
+              </p>
+            ) : null}
+            {suggested !== null && !holdCalibration ? (
               <div className="mt-3 space-y-2">
                 <p className="text-sm text-slate-700">
                   אפשר לכייל את הערכת ההוצאה היומית ל-{signedKcal(suggested)} לעומת הנוסחה (כרגע: {adjustment === 0 ? "בלי כיול" : signedKcal(adjustment)}).

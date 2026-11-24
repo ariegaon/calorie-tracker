@@ -2,6 +2,7 @@
 
 import { summarizeDay, type DayData } from "../day/summary.ts";
 import { dateOfDay } from "../weight/trend.ts";
+import type { MeasurementPoint } from "../weight/composition.ts";
 
 export type InsightDay = {
   day: number;
@@ -47,6 +48,8 @@ export type InsightDataset = {
   weighIns: InsightWeighIn[];
   items: ItemTotal[];
   plan: InsightPlan;
+  /** Waist and body-fat measurements (any time; the analyses pick their window). */
+  measurements: MeasurementPoint[];
 };
 
 function normalizeName(name: string): string {
@@ -60,6 +63,7 @@ export function buildDataset(input: {
   plan: InsightPlan;
   /** Day tags by day number. */
   tagsByDay?: Map<number, string[]>;
+  measurements?: MeasurementPoint[];
 }): InsightDataset {
   const days: InsightDay[] = [];
   const weighIns: InsightWeighIn[] = [];
@@ -111,5 +115,6 @@ export function buildDataset(input: {
       .map(([name, entry]) => ({ name, totalKcal: entry.totalKcal, days: entry.days.size }))
       .sort((a, b) => b.totalKcal - a.totalKcal),
     plan: input.plan,
+    measurements: input.measurements ?? [],
   };
 }

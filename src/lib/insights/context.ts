@@ -7,6 +7,7 @@ import { activeCaloriesForActivity } from "../calculations/energy.ts";
 import type { DayData } from "../day/summary.ts";
 import { dailyWeights, dateOfDay, fitTrend } from "../weight/trend.ts";
 import { fitWithConditionOffsets, type Finding } from "./analyses.ts";
+import { compositionSignal } from "../weight/composition.ts";
 import type { InsightDataset } from "./dataset.ts";
 
 const WEEKDAYS = ["א", "ב", "ג", "ד", "ה", "ו", "ש"];
@@ -153,6 +154,21 @@ export function buildQuestionContext(input: {
     })),
     weigh_ins: weighIns,
     workouts,
+    body_measurements: dataset.measurements
+      .filter((point) => point.day > dataset.lastDay - 90)
+      .sort((a, b) => a.day - b.day)
+      .map((point) => ({ date: dateLabel(point.day), waist_cm: point.waistCm, body_fat_percent: point.bodyFatPercent })),
+    second_signal: (() => {
+      const signal = compositionSignal(dataset.measurements, dataset.lastDay);
+      const trend = signal.source === "waist" ? signal.waist : signal.bodyFat;
+      return {
+        verdict: signal.verdict,
+        source: signal.source,
+        change_over_window: trend ? r(trend.change, 1) : null,
+        weeks: trend ? Math.round(trend.spanDays / 7) : null,
+        note: "computed by the app; a 1 cm waist (or 1 point body fat) change over 3+ weeks is needed to count",
+      };
+    })(),
     trends: {
       overall_last_28_days_kg_per_week: overall ? r(overall.slopeKgPerDay * 7, 2) : "not enough data",
       by_weigh_in_condition: conditionTrends,

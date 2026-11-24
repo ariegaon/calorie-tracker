@@ -3,6 +3,8 @@ import assert from "node:assert/strict";
 import type { InsightDataset, InsightDay, InsightWeighIn } from "./dataset.ts";
 import {
   dayTags,
+  recomposition,
+  trainingWater,
   delayedCompensation,
   fitWithConditionOffsets,
   goalReality,
@@ -28,7 +30,7 @@ function dataset(days: Partial<InsightDay>[], weighIns: InsightWeighIn[] = [], i
     tags: [],
     ...day,
   }));
-  return { firstDay: START, lastDay: START + days.length - 1, days: full, weighIns, items, plan };
+  return { firstDay: START, lastDay: START + days.length - 1, days: full, weighIns, items, plan, measurements: [] };
 }
 
 test("compensation: extra eating on the two days after big workouts is found", () => {
@@ -157,4 +159,45 @@ test("day tags: a tag whose days and following days carry extra eating is found"
 test("day tags: a tag that changes nothing is not reported", () => {
   const days: Partial<InsightDay>[] = new Array(42).fill(null).map((_, i) => (i % 7 === 3 ? { tags: ["חופשה"] } : {}));
   assert.equal(dayTags(dataset(days)), null);
+});
+
+const shrinkingWaist = (lastDay: number) =>
+  [28, 21, 14, 7, 0].map((daysAgo, i) => ({ day: lastDay - daysAgo, waistCm: 94 - i * 0.45, bodyFatPercent: null }));
+
+test("a shrinking waist stops the 'unlogged food' finding and adds a note to the pace finding", () => {
+  const ds = dataset(new Array(28).fill(null).map((_, i) => (i % 3 === 0 ? { entries: 1 } : {})), steadyWeighIns(-0.1));
+  assert.ok(loggingBlindSpots(ds));
+  const withWaist = { ...ds, measurements: shrinkingWaist(ds.lastDay) };
+  assert.equal(loggingBlindSpots(withWaist), null);
+  const pace = goalReality(withWaist);
+  assert.ok(pace);
+  assert.equal(pace.facts.second_signal, "waist");
+  assert.equal(pace.facts.second_signal_change, -1.8);
+  assert.ok(pace.text.includes("המותניים"));
+});
+
+test("recomposition: a flat scale with a shrinking waist", () => {
+  const ds = dataset(new Array(28).fill({}), steadyWeighIns(0));
+  assert.equal(recomposition(ds), null); // no waist data
+  const finding = recomposition({ ...ds, measurements: shrinkingWaist(ds.lastDay) });
+  assert.ok(finding);
+  assert.equal(finding.facts.second_signal_change, -1.8);
+  assert.equal(finding.facts.weight_trend_kg_per_week, 0);
+});
+
+test("training water: weight up after a much heavier training week, while eating stayed on target", () => {
+  const days: Partial<InsightDay>[] = new Array(28).fill(null).map((_, i) => (i >= 21 ? { workoutKcal: i % 2 === 0 ? 400 : 0, intakeKcal: 1800 + (i % 2 === 0 ? 400 : 0) } : i % 7 === 0 ? { workoutKcal: 200 } : {}));
+  const weighIns: InsightWeighIn[] = [
+    { day: START + 14, weightKg: 80, condition: null },
+    { day: START + 16, weightKg: 80.1, condition: null },
+    { day: START + 25, weightKg: 81.0, condition: null },
+    { day: START + 27, weightKg: 81.1, condition: null },
+  ];
+  const finding = trainingWater(dataset(days, weighIns));
+  assert.ok(finding);
+  assert.equal(finding.facts.workout_kcal_last_7_days, 1200);
+  assert.equal(finding.facts.weight_jump_kg, 1);
+  // The same jump while eating well over the allowance is not blamed on water.
+  const overeating = days.map((day, i) => (i >= 21 ? { ...day, intakeKcal: 2800 } : day));
+  assert.equal(trainingWater(dataset(overeating, weighIns)), null);
 });

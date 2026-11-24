@@ -4,7 +4,7 @@
 import { getSupabase } from "@/lib/supabase/client";
 import { loadProfile, type ProfileRow } from "@/lib/profile";
 import { profileEnergy } from "@/lib/energy-profile";
-import { loadCalibrationAdjustment } from "@/lib/weight/extras-data";
+import { loadBodyMeasurements, loadCalibrationAdjustment } from "@/lib/weight/extras-data";
 import { loadRangeDays, type RangeDay } from "@/lib/reports/data";
 import { dateOfDay, dayIndex } from "@/lib/weight/trend";
 import { loadMarksInRange } from "@/lib/tags/data";
@@ -84,9 +84,10 @@ async function loadAnalysisInputs(userId: string, now: Date): Promise<AnalysisIn
   if (!profile) return null;
   const today = dayIndex(now);
   const firstDay = today - INSIGHT_WINDOW_DAYS + 1;
-  const [range, marks] = await Promise.all([
+  const [range, marks, measurements] = await Promise.all([
     loadRangeDays(userId, firstDay, today),
     loadMarksInRange(userId, dateOfDay(firstDay), dateOfDay(today)).catch(() => new Map<string, string[]>()),
+    loadBodyMeasurements(userId).catch(() => []),
   ]);
   // Day tags arrive keyed yyyy-mm-dd; the analyses use day numbers.
   const tagsByDay = new Map<number, string[]>();
@@ -116,6 +117,11 @@ async function loadAnalysisInputs(userId: string, now: Date): Promise<AnalysisIn
       baselineKcal: energy.baseline,
     },
     tagsByDay,
+    measurements: measurements.map((row) => ({
+      day: dayIndex(new Date(row.measured_at)),
+      waistCm: row.waist_cm === null ? null : Number(row.waist_cm),
+      bodyFatPercent: row.body_fat_percent === null ? null : Number(row.body_fat_percent),
+    })),
   });
   return { profile, range, dataset, bmr: energy.bmr };
 }

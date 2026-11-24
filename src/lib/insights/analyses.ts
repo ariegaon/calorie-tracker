@@ -4,6 +4,7 @@
 
 import type { InsightDataset, InsightDay } from "./dataset.ts";
 import { dailyWeights, dateOfDay, fitTrend, KCAL_PER_KG } from "../weight/trend.ts";
+import { compositionSignal, describeChange } from "../weight/composition.ts";
 
 export type InsightKind =
   | "delayed_compensation"
@@ -12,7 +13,9 @@ export type InsightKind =
   | "goal_reality"
   | "outlier_days"
   | "logging_blind_spots"
-  | "day_tags";
+  | "day_tags"
+  | "recomposition"
+  | "training_water";
 
 export type Finding = {
   kind: InsightKind;
@@ -299,6 +302,17 @@ export function goalReality(ds: InsightDataset): Finding | null {
   }
 
   const slower = planned < 0 ? gapKcal > 0 : gapKcal < 0;
+  const composition = compositionSignal(ds.measurements, ds.lastDay);
+  let compositionNote = "";
+  if (slower && planned < 0 && composition.verdict === "fat_loss_likely") {
+    const trend = composition.source === "waist" ? composition.waist : composition.bodyFat;
+    if (trend) {
+      const what = composition.source === "waist" ? "המותניים" : "אחוז השומן";
+      compositionNote = ` אבל ${what}: ${describeChange(trend, composition.source === "waist" ? 'ס"מ' : "נקודות אחוז")}, כך שאובדן השומן כנראה טוב יותר ממה שהמשקל מראה.`;
+      facts.second_signal = composition.source === "waist" ? "waist" : "body_fat";
+      facts.second_signal_change = Number(trend.change.toFixed(1));
+    }
+  }
   return {
     kind: "goal_reality",
     strength: Math.min(1, Math.abs(gapKcal) / 400),
@@ -306,7 +320,7 @@ export function goalReality(ds: InsightDataset): Finding | null {
     text:
       `לפי השקילות, הקצב בפועל הוא ${Math.abs(actualWeekly).toFixed(2)} ק"ג בשבוע ` +
       `${actualWeekly < 0 ? "ירידה" : "עלייה"}, לעומת ${Math.abs(planned).toFixed(2)} בתוכנית. ` +
-      `הפער שווה בערך ${fmt(Math.abs(gapKcal))} קק"ל ביום.${etaText}`,
+      `הפער שווה בערך ${fmt(Math.abs(gapKcal))} קק"ל ביום.${etaText}${compositionNote}`,
     facts,
   };
 }
@@ -369,6 +383,8 @@ export function outlierDays(ds: InsightDataset): Finding | null {
 export function loggingBlindSpots(ds: InsightDataset): Finding | null {
   const logged = loggedDays(ds);
   if (logged.length < 14) return null;
+  // A shrinking waist means the slow scale is more likely water or muscle than unlogged food.
+  if (compositionSignal(ds.measurements, ds.lastDay).verdict === "fat_loss_likely") return null;
   const daily = dailyWeights(ds.weighIns.map((weighIn) => ({ at: dateOfDay(weighIn.day).toISOString(), weightKg: weighIn.weightKg })));
   const fit = fitTrend(daily, ds.lastDay);
   if (!fit || fit.weighDays < 8 || fit.spanDays < 21) return null;
@@ -455,6 +471,81 @@ export function dayTags(ds: InsightDataset): Finding | null {
   return best;
 }
 
+// ------------------------------------------------------------------ 8. the scale stands still, the waist does not
+
+export function recomposition(ds: InsightDataset): Finding | null {
+  const composition = compositionSignal(ds.measurements, ds.lastDay);
+  if (composition.verdict !== "fat_loss_likely") return null;
+  const daily = dailyWeights(ds.weighIns.map((weighIn) => ({ at: dateOfDay(weighIn.day).toISOString(), weightKg: weighIn.weightKg })));
+  const fit = fitTrend(daily, ds.lastDay);
+  if (!fit) return null;
+  const weekly = fit.slopeKgPerDay * 7;
+  // Only when the scale looks disappointing: nearly flat, or well behind a loss plan.
+  const flat = Math.abs(weekly) <= 0.15;
+  const behind = ds.plan.plannedWeeklyKg < 0 && weekly - ds.plan.plannedWeeklyKg >= 0.2;
+  if (!flat && !behind) return null;
+  const trend = (composition.source === "waist" ? composition.waist : composition.bodyFat)!;
+  const unit = composition.source === "waist" ? 'ס"מ' : "נקודות אחוז";
+  const what = composition.source === "waist" ? "היקף המותניים" : "אחוז השומן";
+  return {
+    kind: "recomposition",
+    strength: Math.min(1, 0.5 + Math.abs(trend.change) / 4),
+    title: "המשקל כמעט לא זז, אבל הגוף משתנה",
+    text:
+      `המשקל ${flat ? "כמעט יציב" : `יורד רק ${Math.abs(weekly).toFixed(2)} ק"ג בשבוע`}, אבל ${what}: ${describeChange(trend, unit)}. ` +
+      `כנראה יש אובדן שומן, והמשקל מתעכב בגלל מים או מעט שריר. זו סיבה להמשיך כרגיל, לא להוריד את היעד.`,
+    facts: {
+      weight_trend_kg_per_week: Number(weekly.toFixed(2)),
+      planned_kg_per_week: Number(ds.plan.plannedWeeklyKg.toFixed(2)),
+      second_signal: composition.source === "waist" ? "waist_cm" : "body_fat_percent",
+      second_signal_change: Number(trend.change.toFixed(1)),
+      second_signal_weeks: Math.round(trend.spanDays / 7),
+      measurements: trend.count,
+    },
+  };
+}
+
+// ------------------------------------------------------------------ 9. a jump on the scale after a heavier training week
+
+export function trainingWater(ds: InsightDataset): Finding | null {
+  const recent = ds.days.filter((day) => day.day > ds.lastDay - 7);
+  const before = ds.days.filter((day) => day.day <= ds.lastDay - 7 && day.day > ds.lastDay - 28);
+  if (before.length < 14) return null;
+  const recentKcal = recent.reduce((sum, day) => sum + day.workoutKcal, 0);
+  const weeklyBefore = (before.reduce((sum, day) => sum + day.workoutKcal, 0) / before.length) * 7;
+  if (recentKcal < 900 || recentKcal < Math.max(weeklyBefore * 1.5, weeklyBefore + 600)) return null;
+
+  const weights = (from: number, to: number) =>
+    ds.weighIns.filter((weighIn) => weighIn.day >= from && weighIn.day <= to).map((weighIn) => weighIn.weightKg);
+  const now = weights(ds.lastDay - 3, ds.lastDay);
+  const earlier = weights(ds.lastDay - 14, ds.lastDay - 8);
+  if (now.length < 2 || earlier.length < 2) return null;
+  const jump = mean(now) - mean(earlier);
+  if (jump < 0.7) return null;
+
+  // Not explained by eating: the last week's intake stayed near the allowance.
+  const loggedRecent = recent.filter((day) => day.logged);
+  if (loggedRecent.length < 4) return null;
+  const overAllowance = mean(loggedRecent.map((day) => day.intakeKcal - (ds.plan.targetKcal + day.workoutKcal)));
+  if (overAllowance > 200) return null;
+
+  return {
+    kind: "training_water",
+    strength: Math.min(1, jump / 1.5),
+    title: "הקפיצה במשקל היא כנראה מים",
+    text:
+      `השבוע שרפת באימונים כ-${fmt(recentKcal)} קק"ל, לעומת כ-${fmt(weeklyBefore)} בשבוע לפני כן, והמשקל עלה ב-${jump.toFixed(1)} ק"ג. ` +
+      `האכילה נשארה בתוך היעד, ולכן זה כנראה מים שהשרירים אוגרים אחרי עומס חדש, לא שומן. ` +
+      `בדרך כלל זה יורד תוך שבוע-שבועיים; אין סיבה לשנות את היעד.`,
+    facts: {
+      workout_kcal_last_7_days: round(recentKcal),
+      workout_kcal_per_week_before: round(weeklyBefore),
+      weight_jump_kg: Number(jump.toFixed(1)),
+      intake_vs_allowance_kcal_last_7_days: round(overAllowance),
+    },
+  };
+}
+
 // ------------------------------------------------------------------ all together
 
 const ANALYSES = [
@@ -465,6 +556,8 @@ const ANALYSES = [
   outlierDays,
   loggingBlindSpots,
   dayTags,
+  recomposition,
+  trainingWater,
 ];
 
 /** Every finding that passed its thresholds, strongest first. */

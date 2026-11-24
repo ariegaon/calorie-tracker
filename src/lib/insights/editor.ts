@@ -11,6 +11,8 @@ export const INSIGHT_KINDS: InsightKind[] = [
   "outlier_days",
   "logging_blind_spots",
   "day_tags",
+  "recomposition",
+  "training_water",
 ];
 
 /** A new insight is offered at most this often. */
