@@ -139,12 +139,25 @@ function MacroTile({ label, grams, target }: { label: string; grams: number; tar
       </dd>
       {target && percent !== null ? (
         <dd className="space-y-1">
-          <span className={"block text-xs tabular-nums " + (status === "above" ? "text-amber-700" : "text-slate-600")}>
-            {target.kind === "goal"
-              ? `מתוך ${formatNumber(target.grams)}`
-              : status === "above"
-                ? `מעל ${formatNumber(target.max)}`
-                : `טווח ${formatNumber(target.min)}–${formatNumber(target.max)}`}
+          <span
+            className={
+              "block whitespace-nowrap tabular-nums " +
+              (target.kind === "range" ? "text-[11px] " : "text-xs ") +
+              (status === "above" ? "text-amber-700" : "text-slate-600")
+            }
+          >
+            {target.kind === "goal" ? (
+              `מתוך ${formatNumber(target.grams)}`
+            ) : status === "above" ? (
+              `מעל ${formatNumber(target.max)}`
+            ) : (
+              <>
+                טווח{" "}
+                <span dir="ltr">
+                  {formatNumber(target.min)}–{formatNumber(target.max)}
+                </span>
+              </>
+            )}
           </span>
           <span
             role="progressbar"
