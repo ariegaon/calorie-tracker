@@ -21,6 +21,8 @@ import { profileEnergy } from "@/lib/energy-profile";
 import { loadLatestWeightKg } from "@/lib/weight/data";
 import { loadCalibrationAdjustment } from "@/lib/weight/extras-data";
 import { MacroGoalsFields } from "@/components/MacroGoalsFields";
+import { CalculationExplainer } from "@/components/CalculationExplainer";
+import { buildExplainInput } from "@/lib/explain-input";
 import { Button, Card, Field, FullPageMessage, Notice, Select, TextInput } from "@/components/ui";
 
 export default function ProfilePage() {
@@ -82,8 +84,8 @@ export default function ProfilePage() {
 
   const isOnboarding = !existing?.onboarding_completed_at;
 
-  // The recommendation for what is in the form now, before it is saved.
-  const macroPreview = useMemo(() => {
+  // The calculation for what is in the form now, before it is saved.
+  const preview = useMemo(() => {
     const sex = form.sexForBmr === "male" || form.sexForBmr === "female" ? form.sexForBmr : null;
     const height = parseNumber(form.heightCm);
     const target = parseNumber(form.targetWeightKg);
@@ -102,7 +104,14 @@ export default function ProfilePage() {
       daily_fat_goal_g: null,
       daily_carbs_goal_g: null,
     };
-    return profileEnergy(row, weight, new Date(), adjustment)?.macros ?? null;
+    if (weight === null) return null;
+    const now = new Date();
+    const energy = profileEnergy(row, weight, now, adjustment);
+    if (!energy) return null;
+    return {
+      macros: energy.macros,
+      explain: buildExplainInput(row, energy, weight, latestWeightKg !== null ? "weigh_in" : "profile", now, null),
+    };
   }, [form, existing, latestWeightKg, adjustment]);
 
   function set<K extends keyof ProfileForm>(key: K, value: string) {
@@ -268,6 +277,18 @@ export default function ProfilePage() {
               />
             </Field>
           ) : null}
+
+          {preview?.explain ? (
+            <p className="flex flex-wrap items-baseline justify-between gap-2 text-sm text-slate-600">
+              <span>
+                היעד היומי לפי מה שמוזן כאן:{" "}
+                <span className="font-semibold text-slate-900">
+                  {Math.round(preview.explain.target.targetKcal).toLocaleString("he-IL")} קק"ל
+                </span>
+              </span>
+              <CalculationExplainer input={preview.explain} />
+            </p>
+          ) : null}
         </Card>
 
         <Card className="space-y-4">
@@ -303,7 +324,7 @@ export default function ProfilePage() {
             />
           </Field>
 
-          <MacroGoalsFields form={form} errors={errors} macros={macroPreview} onChange={(key, value) => set(key, value)} />
+          <MacroGoalsFields form={form} errors={errors} macros={preview?.macros ?? null} onChange={(key, value) => set(key, value)} />
         </Card>
 
         {saveError ? <Notice kind="error">{saveError}</Notice> : null}

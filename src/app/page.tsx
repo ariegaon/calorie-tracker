@@ -7,6 +7,8 @@ import { useAuth } from "@/lib/auth/AuthProvider";
 import { loadProfile, type ProfileRow } from "@/lib/profile";
 import { profileEnergy, type ProfileEnergy } from "@/lib/energy-profile";
 import { macroStatus, type MacroTarget } from "@/lib/calculations/macros";
+import { buildExplainInput } from "@/lib/explain-input";
+import { CalculationExplainer } from "@/components/CalculationExplainer";
 import { latestWaistMeasurementAt, loadCalibrationAdjustment } from "@/lib/weight/extras-data";
 import { addDays, defaultEntryTime, formatDayLabel, formatTime, isSameDay, startOfDay } from "@/lib/day/dates";
 import { loadDay, saveDrink, setSnackSkipped, type LoadedDay } from "@/lib/day/data";
@@ -643,6 +645,25 @@ export default function HomePage() {
                   היעד הועלה לרצפה הבטוחה של {formatNumber(energy.target.targetKcal)} קק"ל ביום, ולכן הירידה תהיה איטית
                   מהמתוכנן.
                 </p>
+              ) : null}
+              {weightKg !== null ? (
+                <CalculationExplainer
+                  className="mt-2"
+                  input={buildExplainInput(
+                    profile,
+                    energy,
+                    weightKg,
+                    currentData.latestWeightKg !== null ? "weigh_in" : "profile",
+                    today,
+                    {
+                      isToday,
+                      foodKcal: summary.foodKcal,
+                      drinkKcal: summary.drinkKcal,
+                      snackKcal: snackReserve,
+                      workoutKcal: remaining.workoutKcal,
+                    },
+                  )}
+                />
               ) : null}
 
               <details className="mt-3 border-t border-slate-100 pt-3">
