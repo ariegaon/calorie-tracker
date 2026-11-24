@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth/AuthProvider";
@@ -17,6 +17,10 @@ import {
 import { parseNumber, validateProfile, type ProfileErrors, type ProfileForm } from "@/lib/validation/profile";
 import { BottomNav } from "@/components/BottomNav";
 import { paceForTargetDate } from "@/lib/calculations/goal";
+import { profileEnergy } from "@/lib/energy-profile";
+import { loadLatestWeightKg } from "@/lib/weight/data";
+import { loadCalibrationAdjustment } from "@/lib/weight/extras-data";
+import { MacroGoalsFields } from "@/components/MacroGoalsFields";
 import { Button, Card, Field, FullPageMessage, Notice, Select, TextInput } from "@/components/ui";
 
 export default function ProfilePage() {
@@ -31,6 +35,26 @@ export default function ProfilePage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [latestWeightKg, setLatestWeightKg] = useState<number | null>(null);
+  const [adjustment, setAdjustment] = useState(0);
+
+  // For the macro recommendation: the same weight and calibration the home screen uses.
+  useEffect(() => {
+    if (!userId) return;
+    let cancelled = false;
+    Promise.all([loadLatestWeightKg(userId), loadCalibrationAdjustment(userId)])
+      .then(([weight, calibration]) => {
+        if (cancelled) return;
+        setLatestWeightKg(weight);
+        setAdjustment(calibration);
+      })
+      .catch(() => {
+        // The recommendation then uses the weight in the form.
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [userId]);
 
   useEffect(() => {
     if (authLoading) return;
@@ -57,6 +81,29 @@ export default function ProfilePage() {
   }, [authLoading, userId, router]);
 
   const isOnboarding = !existing?.onboarding_completed_at;
+
+  // The recommendation for what is in the form now, before it is saved.
+  const macroPreview = useMemo(() => {
+    const sex = form.sexForBmr === "male" || form.sexForBmr === "female" ? form.sexForBmr : null;
+    const height = parseNumber(form.heightCm);
+    const target = parseNumber(form.targetWeightKg);
+    const weight = latestWeightKg ?? parseNumber(form.startWeightKg);
+    const byDate = form.weeklyGoalKg === PACE_BY_DATE;
+    const row: ProfileRow = {
+      ...(existing ?? ({} as ProfileRow)),
+      sex_for_bmr: sex,
+      birth_date: form.birthDate || null,
+      height_cm: height,
+      target_weight_kg: target,
+      activity_factor: parseNumber(form.activityFactor) ?? 1.2,
+      weekly_weight_change_goal_kg: byDate ? null : parseNumber(form.weeklyGoalKg),
+      target_date: byDate && form.targetDate ? form.targetDate : null,
+      daily_protein_goal_g: null,
+      daily_fat_goal_g: null,
+      daily_carbs_goal_g: null,
+    };
+    return profileEnergy(row, weight, new Date(), adjustment)?.macros ?? null;
+  }, [form, existing, latestWeightKg, adjustment]);
 
   function set<K extends keyof ProfileForm>(key: K, value: string) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -246,20 +293,6 @@ export default function ProfilePage() {
             </Select>
           </Field>
 
-          <Field
-            label="יעד חלבון יומי (גרם, לא חובה)"
-            htmlFor="proteinGoalG"
-            error={errors.proteinGoalG}
-          >
-            <TextInput
-              id="proteinGoalG"
-              inputMode="numeric"
-              value={form.proteinGoalG}
-              aria-invalid={Boolean(errors.proteinGoalG)}
-              onChange={(e) => set("proteinGoalG", e.target.value)}
-            />
-          </Field>
-
           <Field label={'יעד שתייה יומי (מ"ל)'} htmlFor="waterGoalMl" error={errors.waterGoalMl}>
             <TextInput
               id="waterGoalMl"
@@ -269,6 +302,8 @@ export default function ProfilePage() {
               onChange={(e) => set("waterGoalMl", e.target.value)}
             />
           </Field>
+
+          <MacroGoalsFields form={form} errors={errors} macros={macroPreview} onChange={(key, value) => set(key, value)} />
         </Card>
 
         {saveError ? <Notice kind="error">{saveError}</Notice> : null}

@@ -11,7 +11,10 @@ export type ProfileRow = {
   target_weight_kg: number | null;
   activity_factor: number;
   weekly_weight_change_goal_kg: number | null;
+  /** Null follows the recommendation computed from the calorie target (same for fat and carbs). */
   daily_protein_goal_g: number | null;
+  daily_fat_goal_g: number | null;
+  daily_carbs_goal_g: number | null;
   daily_water_goal_ml: number;
   onboarding_completed_at: string | null;
   /** yyyy-mm-dd. When set, the daily target comes from the target weight and this date, not the fixed pace. */
@@ -27,7 +30,8 @@ export type ProfileRow = {
 const COLUMNS =
   "user_id, display_name, sex_for_bmr, birth_date, height_cm, start_weight_kg, target_weight_kg, " +
   "activity_factor, weekly_weight_change_goal_kg, daily_protein_goal_g, daily_water_goal_ml, onboarding_completed_at, " +
-  "target_date, snack_allowance_kcal, snack_allowance_source, snack_allowance_note, ai_insights_consent_at";
+  "target_date, snack_allowance_kcal, snack_allowance_source, snack_allowance_note, ai_insights_consent_at, " +
+  "daily_fat_goal_g, daily_carbs_goal_g";
 
 export const ACTIVITY_OPTIONS = [
   { value: "1.2", label: "יושבנית", detail: "עבודה בישיבה, מעט הליכה" },
@@ -56,6 +60,8 @@ export const EMPTY_PROFILE_FORM: ProfileForm = {
   activityFactor: "1.2",
   weeklyGoalKg: "-0.5",
   proteinGoalG: "",
+  fatGoalG: "",
+  carbsGoalG: "",
   waterGoalMl: "2500",
   targetDate: "",
 };
@@ -79,6 +85,8 @@ export function profileRowToForm(row: ProfileRow): ProfileForm {
         ? "-0.5"
         : String(row.weekly_weight_change_goal_kg),
     proteinGoalG: text(row.daily_protein_goal_g),
+    fatGoalG: text(row.daily_fat_goal_g),
+    carbsGoalG: text(row.daily_carbs_goal_g),
     waterGoalMl: String(row.daily_water_goal_ml),
     targetDate: row.target_date ?? "",
   };
@@ -115,6 +123,8 @@ export async function saveProfile(userId: string, values: ProfileValues, existin
       weekly_weight_change_goal_kg: values.weeklyGoalKg,
       target_date: values.targetDate,
       daily_protein_goal_g: values.proteinGoalG,
+      daily_fat_goal_g: values.fatGoalG,
+      daily_carbs_goal_g: values.carbsGoalG,
       daily_water_goal_ml: values.waterGoalMl,
       onboarding_completed_at: existing?.onboarding_completed_at ?? new Date().toISOString(),
     },

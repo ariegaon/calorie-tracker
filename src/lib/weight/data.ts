@@ -38,3 +38,15 @@ export async function loadDayBalances(
     return { day, balanceKcal: summary.balance?.balanceKcal ?? 0, documented: summary.hasFood };
   });
 }
+
+/** The latest weigh-in, or null when there is none. */
+export async function loadLatestWeightKg(userId: string): Promise<number | null> {
+  const { data, error } = await getSupabase()
+    .from("weight_logs")
+    .select("weight_kg")
+    .eq("user_id", userId)
+    .order("measured_at", { ascending: false })
+    .limit(1);
+  if (error) throw new Error(error.message);
+  return data && data.length > 0 ? Number((data[0] as { weight_kg: number }).weight_kg) : null;
+}

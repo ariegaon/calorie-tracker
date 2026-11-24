@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation";
 import { useAuth } from "@/lib/auth/AuthProvider";
 import { loadProfile, type ProfileRow } from "@/lib/profile";
 import { profileEnergy, type ProfileEnergy } from "@/lib/energy-profile";
+import { macroStatus, type MacroTarget } from "@/lib/calculations/macros";
 import { latestWaistMeasurementAt, loadCalibrationAdjustment } from "@/lib/weight/extras-data";
 import { addDays, defaultEntryTime, formatDayLabel, formatTime, isSameDay, startOfDay } from "@/lib/day/dates";
 import { loadDay, saveDrink, setSnackSkipped, type LoadedDay } from "@/lib/day/data";
@@ -124,27 +125,36 @@ function ProgressBar({ label, value, goal, unit }: { label: string; value: numbe
   );
 }
 
-/** One of three equal tiles; a tile with a daily goal also shows "out of" and a thin bar. */
-function MacroTile({ label, grams, goal }: { label: string; grams: number; goal: number | null }) {
-  const percent = goal && goal > 0 ? Math.min(100, Math.round((grams / goal) * 100)) : null;
+/** One of three equal tiles: a daily goal shows "out of" and a bar; a recommended range shows its ends. */
+function MacroTile({ label, grams, target }: { label: string; grams: number; target: MacroTarget | null }) {
+  const status = target ? macroStatus(target, grams) : null;
+  const top = target ? (target.kind === "goal" ? target.grams : target.max) : 0;
+  const percent = target && top > 0 ? Math.min(100, Math.round((grams / top) * 100)) : null;
+  const barColor = status === "above" ? "bg-amber-500" : "bg-emerald-600";
   return (
     <div className="flex flex-col justify-between gap-1 rounded-xl bg-slate-100 px-2 py-2">
       <dt className="text-xs text-slate-600">{label}</dt>
       <dd className="font-bold tabular-nums">
-        {formatNumber(grams)} גרם{percent !== null && percent >= 100 ? " ✓" : ""}
+        {formatNumber(grams)} גרם{status === "within" ? " ✓" : ""}
       </dd>
-      {percent !== null && goal ? (
+      {target && percent !== null ? (
         <dd className="space-y-1">
-          <span className="block text-xs tabular-nums text-slate-600">מתוך {formatNumber(goal)}</span>
+          <span className={"block text-xs tabular-nums " + (status === "above" ? "text-amber-700" : "text-slate-600")}>
+            {target.kind === "goal"
+              ? `מתוך ${formatNumber(target.grams)}`
+              : status === "above"
+                ? `מעל ${formatNumber(target.max)}`
+                : `טווח ${formatNumber(target.min)}–${formatNumber(target.max)}`}
+          </span>
           <span
             role="progressbar"
-            aria-label={`${label} מתוך היעד`}
+            aria-label={`${label} ביחס ליעד`}
             aria-valuemin={0}
             aria-valuemax={100}
             aria-valuenow={percent}
             className="block h-1.5 overflow-hidden rounded-full bg-slate-200"
           >
-            <span className="block h-full rounded-full bg-emerald-600" style={{ width: `${percent}%` }} />
+            <span className={"block h-full rounded-full " + barColor} style={{ width: `${percent}%` }} />
           </span>
         </dd>
       ) : null}
@@ -456,7 +466,7 @@ export default function HomePage() {
         hydrationMl: summary.hydrationMl,
         waterGoalMl: Number(profile.daily_water_goal_ml),
         proteinG: summary.proteinG,
-        proteinGoalG: profile.daily_protein_goal_g === null ? null : Number(profile.daily_protein_goal_g),
+        proteinGoalG: energy?.macros.protein.grams ?? null,
       })
     : [];
 
@@ -757,13 +767,9 @@ export default function HomePage() {
 
         <Card>
           <dl className="grid grid-cols-3 gap-2 text-center">
-            <MacroTile
-              label="חלבון"
-              grams={summary.proteinG}
-              goal={profile.daily_protein_goal_g === null ? null : Number(profile.daily_protein_goal_g)}
-            />
-            <MacroTile label="פחמימות" grams={summary.carbsG} goal={null} />
-            <MacroTile label="שומן" grams={summary.fatG} goal={null} />
+            <MacroTile label="חלבון" grams={summary.proteinG} target={energy?.macros.protein ?? null} />
+            <MacroTile label="פחמימות" grams={summary.carbsG} target={energy?.macros.carbs ?? null} />
+            <MacroTile label="שומן" grams={summary.fatG} target={energy?.macros.fat ?? null} />
           </dl>
         </Card>
 

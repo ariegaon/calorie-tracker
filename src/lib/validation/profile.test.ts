@@ -15,6 +15,8 @@ const valid: ProfileForm = {
   activityFactor: "1.35",
   weeklyGoalKg: "-0.5",
   proteinGoalG: "140",
+  fatGoalG: "",
+  carbsGoalG: "",
   waterGoalMl: "2500",
   targetDate: "",
 };
@@ -50,6 +52,8 @@ test("a valid form passes and values are converted to numbers", () => {
     weeklyGoalKg: -0.5,
     targetDate: null,
     proteinGoalG: 140,
+    fatGoalG: null,
+    carbsGoalG: null,
     waterGoalMl: 2500,
   });
 });
@@ -60,6 +64,21 @@ test("optional fields may be empty", () => {
   if (!result.ok) return;
   assert.equal(result.values.displayName, null);
   assert.equal(result.values.proteinGoalG, null);
+});
+
+test("own fat and carbs goals are optional and range-checked", () => {
+  const set = validateProfile({ ...valid, fatGoalG: "60", carbsGoalG: "180" }, TODAY);
+  assert.equal(set.ok, true);
+  if (set.ok) {
+    assert.equal(set.values.fatGoalG, 60);
+    assert.equal(set.values.carbsGoalG, 180);
+  }
+  const bad = validateProfile({ ...valid, fatGoalG: "0", carbsGoalG: "900" }, TODAY);
+  assert.equal(bad.ok, false);
+  if (!bad.ok) {
+    assert.ok(bad.errors.fatGoalG);
+    assert.ok(bad.errors.carbsGoalG);
+  }
 });
 
 test("missing and out-of-range fields are reported per field", () => {

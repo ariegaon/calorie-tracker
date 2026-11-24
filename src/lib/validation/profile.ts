@@ -11,7 +11,10 @@ export type ProfileForm = {
   targetWeightKg: string;
   activityFactor: string;
   weeklyGoalKg: string;
+  /** Empty = follow the recommendation. */
   proteinGoalG: string;
+  fatGoalG: string;
+  carbsGoalG: string;
   waterGoalMl: string;
   /** yyyy-mm-dd; used when weeklyGoalKg is "date". */
   targetDate: string;
@@ -29,6 +32,8 @@ export type ProfileValues = {
   weeklyGoalKg: number;
   targetDate: string | null;
   proteinGoalG: number | null;
+  fatGoalG: number | null;
+  carbsGoalG: number | null;
   waterGoalMl: number;
 };
 
@@ -136,12 +141,19 @@ export function validateProfile(form: ProfileForm, today: Date = new Date()): Pr
     errors.weeklyGoalKg = "יש לבחור קצב";
   }
 
-  let proteinGoal: number | null = null;
-  if (form.proteinGoalG.trim() !== "") {
-    const protein = numberInRange(form.proteinGoalG, 0, 400, "", "חלבון בין 0 ל-400 גרם");
-    if ("error" in protein) errors.proteinGoalG = protein.error;
-    else proteinGoal = Math.round(protein.value);
-  }
+  // Empty means "follow the recommendation".
+  const ownGoal = (key: "proteinGoalG" | "fatGoalG" | "carbsGoalG", max: number, message: string): number | null => {
+    if (form[key].trim() === "") return null;
+    const parsed = numberInRange(form[key], 1, max, "", message);
+    if ("error" in parsed) {
+      errors[key] = parsed.error;
+      return null;
+    }
+    return Math.round(parsed.value);
+  };
+  const proteinGoal = ownGoal("proteinGoalG", 400, "חלבון בין 1 ל-400 גרם");
+  const fatGoal = ownGoal("fatGoalG", 400, "שומן בין 1 ל-400 גרם");
+  const carbsGoal = ownGoal("carbsGoalG", 800, "פחמימות בין 1 ל-800 גרם");
 
   const water = numberInRange(form.waterGoalMl, 500, 10000, "יש להזין יעד שתייה", "בין 500 ל-10,000 מ\"ל");
   if ("error" in water) errors.waterGoalMl = water.error;
@@ -168,6 +180,8 @@ export function validateProfile(form: ProfileForm, today: Date = new Date()): Pr
       weeklyGoalKg: weeklyGoal as number,
       targetDate,
       proteinGoalG: proteinGoal,
+      fatGoalG: fatGoal,
+      carbsGoalG: carbsGoal,
       waterGoalMl: Math.round((water as { value: number }).value),
     },
   };

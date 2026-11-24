@@ -3,6 +3,7 @@
 
 import { baselineExpenditure, bmrMifflinStJeor, calorieTargetForPace, type CalorieTarget } from "@/lib/calculations/energy";
 import { paceForTargetDate, type PaceForDate } from "@/lib/calculations/goal";
+import { macroTargets, type MacroTargets } from "@/lib/calculations/macros";
 import type { ProfileRow } from "@/lib/profile";
 import { ageInYears } from "@/lib/validation/profile";
 import { calibratedBaseline } from "@/lib/weight/trend";
@@ -19,7 +20,13 @@ export type ProfileEnergy = {
   weeklyGoalKg: number;
   /** Set when the pace comes from a target date (null when a fixed pace is chosen or the date has passed). */
   goalPace: Exclude<PaceForDate, { status: "past" }> | null;
+  /** Protein goal and fat/carbs ranges (or the user's own values), from the calorie target. */
+  macros: MacroTargets;
 };
+
+function ownGoal(value: number | null): number | null {
+  return value === null ? null : Number(value);
+}
 
 export function profileEnergy(
   profile: ProfileRow,
@@ -44,5 +51,17 @@ export function profileEnergy(
     }
   }
   const target = calorieTargetForPace(baseline, weeklyGoalKg, sex);
-  return { bmr, formulaBaseline, baseline, adjustmentKcal, target, weeklyGoalKg, goalPace };
+  const macros = macroTargets({
+    targetKcal: target.targetKcal,
+    weightKg,
+    targetWeightKg: profile.target_weight_kg === null ? null : Number(profile.target_weight_kg),
+    weeklyGoalKg,
+    activityFactor: Number(profile.activity_factor),
+    custom: {
+      proteinG: ownGoal(profile.daily_protein_goal_g),
+      fatG: ownGoal(profile.daily_fat_goal_g),
+      carbsG: ownGoal(profile.daily_carbs_goal_g),
+    },
+  });
+  return { bmr, formulaBaseline, baseline, adjustmentKcal, target, weeklyGoalKg, goalPace, macros };
 }
