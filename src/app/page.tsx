@@ -134,7 +134,7 @@ function MacroTile({ label, grams, target }: { label: string; grams: number; tar
   return (
     <div className="flex flex-col justify-between gap-1 rounded-xl bg-slate-100 px-2 py-2">
       <dt className="text-xs text-slate-600">{label}</dt>
-      <dd className="font-bold tabular-nums">
+      <dd className="whitespace-nowrap text-sm font-bold tabular-nums">
         {formatNumber(grams)} גרם{status === "within" ? " ✓" : ""}
       </dd>
       {target && percent !== null ? (
