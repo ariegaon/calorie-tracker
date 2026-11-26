@@ -70,6 +70,9 @@ function Connections() {
               הגדרות Health Connect
             </Button>
           )}
+          <Link href="/settings/sources" className="block text-sm font-medium text-emerald-700 underline">
+            אימון לא הגיע? איך מחברים שעון, Garmin או Strava
+          </Link>
           <Link href="/" className="block text-sm font-medium text-emerald-700 underline">
             למסך הבית
           </Link>
@@ -94,6 +97,9 @@ function Connections() {
             <span className="font-medium">אייפון:</span> האפליקציה זמינה כרגע בהזמנה דרך TestFlight. היא מסנכרנת אימונים
             מ-Apple Health.
           </p>
+          <Link href="/settings/sources" className="block text-sm font-medium text-emerald-700 underline">
+            איך מחברים שעון, Garmin או Strava
+          </Link>
         </Card>
       )}
     </>

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Card, Notice } from "@/components/ui";
 import {
@@ -297,6 +298,11 @@ export function HealthSyncCard({ userId, onSynced }: { userId: string; onSynced:
       )}
 
       {message ? <Notice kind="info">{message}</Notice> : null}
+      {status && status.state !== "unavailable" ? (
+        <Link href="/settings/sources" className="block text-sm font-medium text-emerald-700 underline">
+          אימון לא הגיע? איך מחברים שעון ואפליקציות
+        </Link>
+      ) : null}
       {error ? (
         <>
           <Notice kind="error">{error}</Notice>
