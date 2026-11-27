@@ -29,7 +29,17 @@ import { HomeNotice, type NoticeItem } from "@/components/HomeNotice";
 import { DayTagsRow } from "@/components/DayTagsRow";
 import { loadUnseenInsight, maybeGenerateWeeklyInsight, type InsightRow } from "@/lib/insights/data";
 import { favoriteCalories, type Favorite } from "@/lib/favorites";
-import { deleteFavorite, loadFavorites, logFavorite } from "@/lib/favorites-data";
+import {
+  deleteFavorite,
+  favoriteFromRecent,
+  loadFavoriteHistory,
+  loadFavorites,
+  logFavorite,
+  logRecent,
+  type FavoriteHistory,
+} from "@/lib/favorites-data";
+import { matchUses, rankFavorites, recentEntries, type RecentEntry } from "@/lib/favorites-ranking";
+import { FavoritesSheet } from "@/components/FavoritesSheet";
 import { buildInsights } from "@/lib/reports/report";
 
 type SheetState =
@@ -39,6 +49,9 @@ type SheetState =
   | { kind: "drink"; existing: DrinkRow | null }
   | { kind: "activity"; existing: ActivityRow | null }
   | { kind: "weight"; existing: WeightRow | null };
+
+/** How many favorites the home screen shows; the rest are one tap away. */
+const HOME_FAVORITES = 6;
 
 const KIND_ICON: Record<TimelineKind, string> = { food: "🍽", drink: "🥤", activity: "🏃", weight: "⚖" };
 const KIND_LABEL: Record<TimelineKind, string> = { food: "מזון", drink: "משקה", activity: "פעילות", weight: "שקילה" };
@@ -289,7 +302,8 @@ export default function HomePage() {
   const [addingWater, setAddingWater] = useState(false);
   const [favorites, setFavorites] = useState<Favorite[]>([]);
   const [favoriteBusy, setFavoriteBusy] = useState<string | null>(null);
-  const [editingFavorites, setEditingFavorites] = useState(false);
+  const [favoriteHistory, setFavoriteHistory] = useState<FavoriteHistory | null>(null);
+  const [favoritesOpen, setFavoritesOpen] = useState(false);
   const [actionNotice, setActionNotice] = useState<string | null>(null);
 
   // Profile: loaded once per user.
@@ -344,9 +358,11 @@ export default function HomePage() {
   useEffect(() => {
     if (!userId) return;
     let cancelled = false;
-    loadFavorites(userId)
-      .then((loaded) => {
-        if (!cancelled) setFavorites(loaded);
+    Promise.all([loadFavorites(userId), loadFavoriteHistory(userId, new Date()).catch(() => null)])
+      .then(([loaded, history]) => {
+        if (cancelled) return;
+        setFavorites(loaded);
+        setFavoriteHistory(history);
       })
       .catch(() => {
         // The diary works without favorites; the card simply stays empty.
@@ -403,6 +419,14 @@ export default function HomePage() {
   const timeline = buildTimeline(currentData, energy?.bmr ?? null);
   const balance = summary.balance;
 
+  // Favorites for this moment: the best fitting few on the home screen, the rest in the sheet.
+  const favoriteUses = favoriteHistory ? matchUses(favorites, favoriteHistory.entries) : [];
+  const topFavorites = rankFavorites(favorites, favoriteUses, today).slice(0, HOME_FAVORITES);
+  const hiddenFavorites = Math.max(0, favorites.length - topFavorites.length);
+  const recent = favoriteHistory
+    ? recentEntries(favoriteHistory.recentFoods, favoriteHistory.recentDrinks, favorites, today)
+    : [];
+
   async function addWaterGlass() {
     setAddingWater(true);
     setActionError(null);
@@ -451,9 +475,40 @@ export default function HomePage() {
     try {
       await logFavorite(currentUserId, favorite, defaultEntryTime(day, new Date()).toISOString());
       setActionNotice(`נוסף: ${favorite.name}`);
+      setFavoritesOpen(false);
       setReloadKey((key) => key + 1);
     } catch {
       setActionError("ההוספה נכשלה. בדוק את החיבור ונסה שוב.");
+    } finally {
+      setFavoriteBusy(null);
+    }
+  }
+
+  async function addRecentToDay(entry: RecentEntry) {
+    setFavoriteBusy(entry.key);
+    setActionError(null);
+    setActionNotice(null);
+    try {
+      await logRecent(currentUserId, entry, defaultEntryTime(day, new Date()).toISOString());
+      setActionNotice(`נוסף: ${entry.name}`);
+      setFavoritesOpen(false);
+      setReloadKey((key) => key + 1);
+    } catch {
+      setActionError("ההוספה נכשלה. בדוק את החיבור ונסה שוב.");
+    } finally {
+      setFavoriteBusy(null);
+    }
+  }
+
+  async function starRecent(entry: RecentEntry) {
+    setFavoriteBusy(entry.key);
+    setActionError(null);
+    try {
+      await favoriteFromRecent(currentUserId, entry);
+      setActionNotice(`נשמר כמועדף: ${entry.name}`);
+      setReloadKey((key) => key + 1);
+    } catch {
+      setActionError("השמירה נכשלה. נסה שוב.");
     } finally {
       setFavoriteBusy(null);
     }
@@ -743,54 +798,51 @@ export default function HomePage() {
         <Card className="space-y-3">
           <div className="flex items-center justify-between gap-3">
             <h2 className="font-semibold">⭐ מועדפים</h2>
-            {favorites.length > 0 ? (
+            {favorites.length > 0 || recent.length > 0 ? (
               <button
                 type="button"
-                onClick={() => setEditingFavorites((value) => !value)}
+                onClick={() => setFavoritesOpen(true)}
                 className="min-h-9 rounded-lg px-2 text-sm font-semibold text-emerald-700 hover:bg-emerald-50"
               >
-                {editingFavorites ? "סיום" : "עריכה"}
+                {hiddenFavorites > 0 ? `הכול (${favorites.length})` : "הכול ועריכה"}
               </button>
             ) : null}
           </div>
           {favorites.length === 0 ? (
             <p className="text-sm text-slate-600">
-              עוד אין מועדפים. בטופס של ארוחה או משקה אפשר לסמן "לשמור גם כמועדף", ואז להוסיף אותם מכאן בלחיצה אחת.
+              עוד אין מועדפים. בטופס של ארוחה או משקה אפשר להפעיל "שמירה כמועדף", ואז להוסיף מכאן בלחיצה אחת.
             </p>
           ) : (
             <ul className="flex flex-wrap gap-2">
-              {favorites.map((favorite) => (
-                <li key={favorite.id} className="flex items-center">
+              {topFavorites.map((favorite) => (
+                <li key={favorite.id}>
                   <button
                     type="button"
-                    disabled={favoriteBusy !== null || editingFavorites}
+                    disabled={favoriteBusy !== null}
                     onClick={() => addFavoriteToDay(favorite)}
-                    className={
-                      "min-h-11 border border-slate-300 bg-white px-3 text-start text-sm font-medium text-slate-800 hover:bg-slate-100 disabled:opacity-70 " +
-                      (editingFavorites ? "rounded-s-full" : "rounded-full")
-                    }
+                    className="min-h-11 rounded-full border border-slate-300 bg-white px-3 text-start text-sm font-medium text-slate-800 hover:bg-slate-100 disabled:opacity-70"
                   >
                     {favoriteBusy === favorite.id ? "רגע… " : ""}
                     {favorite.name}
                     <span className="text-slate-500"> · {Math.round(favoriteCalories(favorite))} קק"ל</span>
                   </button>
-                  {editingFavorites ? (
-                    <button
-                      type="button"
-                      disabled={favoriteBusy !== null}
-                      onClick={() => removeFavorite(favorite)}
-                      aria-label={`הסרת ${favorite.name} מהמועדפים`}
-                      className="flex min-h-11 w-11 items-center justify-center rounded-e-full border border-s-0 border-red-300 bg-red-50 text-lg text-red-700 hover:bg-red-100"
-                    >
-                      ×
-                    </button>
-                  ) : null}
                 </li>
               ))}
+              {hiddenFavorites > 0 ? (
+                <li>
+                  <button
+                    type="button"
+                    onClick={() => setFavoritesOpen(true)}
+                    className="min-h-11 rounded-full border border-dashed border-emerald-400 bg-emerald-50 px-3 text-sm font-semibold text-emerald-800 hover:bg-emerald-100"
+                  >
+                    עוד {hiddenFavorites}…
+                  </button>
+                </li>
+              ) : null}
             </ul>
           )}
-          {favorites.length > 0 && !editingFavorites ? (
-            <p className="text-xs text-slate-500">לחיצה מוסיפה ליום שמוצג, בשעה הנוכחית. אפשר לערוך אחר כך מציר הזמן.</p>
+          {favorites.length > 0 ? (
+            <p className="text-xs text-slate-500">מוצגים המתאימים לשעה הזו. לחיצה מוסיפה ליום שמוצג.</p>
           ) : null}
         </Card>
 
@@ -853,6 +905,21 @@ export default function HomePage() {
           ) : null}
         </Card>
       </div>
+
+      {favoritesOpen ? (
+        <FavoritesSheet
+          favorites={favorites}
+          uses={favoriteUses}
+          recent={recent}
+          now={today}
+          busyId={favoriteBusy}
+          onClose={() => setFavoritesOpen(false)}
+          onAddFavorite={(favorite) => void addFavoriteToDay(favorite)}
+          onRemoveFavorite={(favorite) => void removeFavorite(favorite)}
+          onAddRecent={(entry) => void addRecentToDay(entry)}
+          onStarRecent={(entry) => void starRecent(entry)}
+        />
+      ) : null}
 
       {sheet ? (
         <Sheet title={sheetTitle(sheet)} onClose={closeSheet}>

@@ -20,8 +20,8 @@ export type FavoriteDrinkPayload = {
 };
 
 export type Favorite =
-  | { id: string; name: string; kind: "meal"; payload: FavoriteMealPayload }
-  | { id: string; name: string; kind: "drink"; payload: FavoriteDrinkPayload };
+  | { id: string; name: string; kind: "meal"; payload: FavoriteMealPayload; createdAt?: string | null }
+  | { id: string; name: string; kind: "drink"; payload: FavoriteDrinkPayload; createdAt?: string | null };
 
 export type FavoriteRow = { id: string; kind: string; name: string; payload: unknown };
 
