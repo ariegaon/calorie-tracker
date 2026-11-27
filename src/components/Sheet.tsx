@@ -92,7 +92,7 @@ export function FormFooter({
   );
 }
 
-/** "Also save as a favorite" option shown in the meal and drink forms. */
+/** "Also save as a favorite" option shown in the meal and drink forms: a full-width switch card, so it is not missed. */
 export function FavoriteOption({
   checked,
   onChange,
@@ -103,15 +103,43 @@ export function FavoriteOption({
   disabled?: boolean;
 }) {
   return (
-    <label className="flex min-h-11 cursor-pointer items-center gap-3 rounded-xl border border-slate-200 bg-white px-3 text-sm font-medium text-slate-800">
-      <input
-        type="checkbox"
-        className="h-5 w-5 accent-emerald-600"
-        checked={checked}
-        disabled={disabled}
-        onChange={(event) => onChange(event.target.checked)}
-      />
-      ⭐ לשמור גם כמועדף, להוספה בלחיצה אחת
-    </label>
+    <button
+      type="button"
+      role="switch"
+      aria-checked={checked}
+      disabled={disabled}
+      onClick={() => onChange(!checked)}
+      className={
+        "flex w-full items-center gap-3 rounded-2xl border-2 px-4 py-3 text-start transition-colors disabled:opacity-60 " +
+        (checked ? "border-amber-400 bg-amber-50" : "border-slate-200 bg-white hover:border-amber-300")
+      }
+    >
+      <span
+        aria-hidden="true"
+        className={
+          "flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-2xl leading-none " +
+          (checked ? "bg-amber-100" : "bg-slate-100 grayscale")
+        }
+      >
+        ⭐
+      </span>
+      <span className="min-w-0 flex-1">
+        <span className="block text-base font-semibold text-slate-900">שמירה כמועדף</span>
+        <span className="block text-sm text-slate-600">בפעם הבאה: הוספה בלחיצה אחת ממסך הבית</span>
+      </span>
+      <span
+        aria-hidden="true"
+        className={
+          "relative h-7 w-12 shrink-0 rounded-full transition-colors " + (checked ? "bg-amber-500" : "bg-slate-300")
+        }
+      >
+        <span
+          className={
+            "absolute top-0.5 h-6 w-6 rounded-full bg-white shadow transition-all " +
+            (checked ? "start-[1.375rem]" : "start-0.5")
+          }
+        />
+      </span>
+    </button>
   );
 }
