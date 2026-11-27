@@ -162,7 +162,9 @@ export function FavoritesSheet({
           ) : null}
         </div>
         <p className="text-xs text-slate-500">
-          {editing ? "לחיצה על × מסירה מהמועדפים. הארוחות שכבר נרשמו לא נמחקות." : "לחיצה מוסיפה ליום שמוצג, בשעה הנוכחית."}
+          {editing
+            ? "לחיצה על × מסירה מהמועדפים. הארוחות שכבר נרשמו לא נמחקות."
+            : "לחיצה מוסיפה ליום שמוצג. המועדפים מקובצים לפי השעות שבהן אתה מוסיף אותם בדרך כלל, והקבוצה של השעה הזו ראשונה."}
         </p>
 
         {searching ? (
@@ -190,7 +192,14 @@ export function FavoritesSheet({
               if (inSlot.length === 0) return null;
               return (
                 <section key={slot} className="space-y-2">
-                  <h3 className="text-sm font-semibold text-slate-700">{SLOT_LABELS[slot]}</h3>
+                  <h3 className="text-sm font-semibold text-slate-700">
+                    {SLOT_LABELS[slot]}
+                    {slot === current ? (
+                      <span className="ms-2 rounded-full bg-emerald-100 px-2 py-0.5 text-xs font-semibold text-emerald-800">
+                        עכשיו
+                      </span>
+                    ) : null}
+                  </h3>
                   <ul className="flex flex-wrap gap-2">{inSlot.map((f) => favoriteChip(f, slot))}</ul>
                 </section>
               );
