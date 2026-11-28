@@ -133,6 +133,49 @@ test("same-workout detection: close starts or substantial overlap", () => {
   assert.equal(isSameWorkout({ started_at: "x", duration_seconds: 60 }, manual), false);
 });
 
+test("a short warm-up right before the run is a separate workout, not a copy", () => {
+  // 28.11: 17 minutes from 04:53, then a 151-minute half marathon from 05:10. They do not overlap.
+  const warmUp = { started_at: at(4, 53), duration_seconds: 1022 };
+  const halfMarathon = { started_at: at(5, 10), duration_seconds: 9060 };
+  assert.equal(isSameWorkout(warmUp, halfMarathon), false);
+  // Similar lengths with close starts are still the same workout (two sources, slightly different times).
+  assert.equal(isSameWorkout({ started_at: at(7, 0), duration_seconds: 2050 }, { started_at: at(7, 12), duration_seconds: 2084 }), true);
+});
+
+test("between copies of the same rank, the one with calories counts", () => {
+  const existingRow = {
+    id: "old",
+    started_at: at(5, 10),
+    duration_seconds: 2000,
+    external_provider: "apple_health",
+    external_activity_id: "old",
+    source_app: "com.strava.stravaride",
+    excluded_from_balance: false,
+    calories_active_kcal: null,
+    calories_total_kcal: null,
+  };
+  const withCalories = {
+    started_at: at(5, 16), // a separate record of the same run, not a rewrite of the stored one
+    duration_seconds: 2010,
+    external_provider: "apple_health",
+    external_activity_id: "new",
+    source_app: "com.strava.stravaride",
+    calories_active_kcal: 300,
+    calories_total_kcal: null,
+  } as unknown as Parameters<typeof planNewActivities>[0][number];
+  const plan = planNewActivities([withCalories], [existingRow]);
+  assert.equal(plan.toInsert[0].excluded_from_balance, false);
+  assert.deepEqual(plan.excludeIds, ["old"]);
+
+  // And the other way round: a copy without calories does not push out one that has them.
+  const reversed = planNewActivities(
+    [{ ...withCalories, external_activity_id: "new2", calories_active_kcal: null } as typeof withCalories],
+    [{ ...existingRow, calories_active_kcal: 300 }],
+  );
+  assert.equal(reversed.toInsert[0].excluded_from_balance, true);
+  assert.deepEqual(reversed.excludeIds, []);
+});
+
 const manualRide: ExistingActivity = {
   id: "manual-1",
   started_at: at(13, 0),

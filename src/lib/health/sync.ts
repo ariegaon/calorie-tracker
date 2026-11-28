@@ -215,6 +215,8 @@ export type ExistingActivity = {
   external_activity_id: string | null;
   source_app?: string | null;
   excluded_from_balance: boolean;
+  calories_active_kcal?: number | null;
+  calories_total_kcal?: number | null;
 };
 
 /** Minutes two workouts' start times may differ and still be the same workout when no duration is known. */
@@ -225,7 +227,11 @@ function interval(startedAt: string, durationSeconds: number | null): [number, n
   return [start, start + Math.max(0, Number(durationSeconds ?? 0)) * 1000];
 }
 
-/** True when two workouts overlap for at least half of the shorter one, or start within 20 minutes of each other. */
+/**
+ * True when two workouts are the same one recorded twice: they overlap for at least half of the shorter one.
+ * Close starts alone are enough only when a duration is missing, or when the lengths are similar.
+ * Back-to-back workouts (a short warm-up, then the run) are separate, even if they start minutes apart.
+ */
 export function isSameWorkout(
   a: { started_at: string; duration_seconds: number | null },
   b: { started_at: string; duration_seconds: number | null },
@@ -233,11 +239,19 @@ export function isSameWorkout(
   const [aStart, aEnd] = interval(a.started_at, a.duration_seconds);
   const [bStart, bEnd] = interval(b.started_at, b.duration_seconds);
   if (Number.isNaN(aStart) || Number.isNaN(bStart)) return false;
-  if (Math.abs(aStart - bStart) <= START_TOLERANCE_MS) return true;
+  const closeStart = Math.abs(aStart - bStart) <= START_TOLERANCE_MS;
+  const aLength = aEnd - aStart;
+  const bLength = bEnd - bStart;
+  if (aLength <= 0 || bLength <= 0) return closeStart;
+  const shorter = Math.min(aLength, bLength);
+  const longer = Math.max(aLength, bLength);
   const overlap = Math.min(aEnd, bEnd) - Math.max(aStart, bStart);
-  const shorter = Math.min(aEnd - aStart, bEnd - bStart);
-  return shorter > 0 && overlap >= shorter / 2;
+  if (overlap >= shorter / 2) return true;
+  return closeStart && shorter / longer >= SIMILAR_LENGTH_RATIO;
 }
+
+/** Two lengths are "similar" when the shorter is at least this share of the longer. */
+const SIMILAR_LENGTH_RATIO = 0.5;
 
 /**
  * Which copy of a workout counts when it arrived from several sources. Higher wins.
@@ -275,8 +289,22 @@ type Counted = {
   started_at: string;
   duration_seconds: number | null;
   rank: number;
+  hasCalories: boolean;
   planned: PlannedInsert | null;
 };
+
+function hasCalories(row: { calories_active_kcal?: number | null; calories_total_kcal?: number | null }): boolean {
+  return (row.calories_active_kcal ?? null) !== null || (row.calories_total_kcal ?? null) !== null;
+}
+
+/**
+ * Between two copies of the same rank, the one with calories counts, and between those the longer one.
+ * A copy without calories never pushes out one that has them.
+ */
+function betterCopy(candidate: Pick<Counted, "hasCalories" | "duration_seconds">, other: Counted): boolean {
+  if (candidate.hasCalories !== other.hasCalories) return candidate.hasCalories;
+  return Number(candidate.duration_seconds ?? 0) > Number(other.duration_seconds ?? 0);
+}
 
 /**
  * Decides what to insert and what to stop counting. Only newly arrived workouts trigger a decision,
@@ -321,7 +349,14 @@ export function planNewActivities(candidates: SyncedActivityInsert[], existing: 
   const seen: Fingerprint[] = existing.filter((row) => row.external_provider !== null).map(fingerprint);
   let counted: Counted[] = existing
     .filter((row) => !row.excluded_from_balance)
-    .map((row) => ({ id: row.id, started_at: row.started_at, duration_seconds: row.duration_seconds, rank: sourceRank(row), planned: null }));
+    .map((row) => ({
+      id: row.id,
+      started_at: row.started_at,
+      duration_seconds: row.duration_seconds,
+      rank: sourceRank(row),
+      hasCalories: hasCalories(row),
+      planned: null,
+    }));
 
   const toInsert: PlannedInsert[] = [];
   const excludeIds: string[] = [];
@@ -343,8 +378,10 @@ export function planNewActivities(candidates: SyncedActivityInsert[], existing: 
     seen.push(print);
 
     const rank = sourceRank(candidate);
+    const mine = { hasCalories: hasCalories(candidate), duration_seconds: candidate.duration_seconds };
     const same = counted.filter((other) => isSameWorkout(candidate, other));
-    const planned: PlannedInsert = { ...candidate, excluded_from_balance: same.some((other) => other.rank >= rank) };
+    const beaten = same.some((other) => other.rank > rank || (other.rank === rank && !betterCopy(mine, other)));
+    const planned: PlannedInsert = { ...candidate, excluded_from_balance: beaten };
     toInsert.push(planned);
     if (planned.excluded_from_balance) continue;
 
@@ -354,7 +391,14 @@ export function planNewActivities(candidates: SyncedActivityInsert[], existing: 
       if (other.planned) other.planned.excluded_from_balance = true;
     }
     counted = counted.filter((other) => !same.includes(other));
-    counted.push({ id: null, started_at: candidate.started_at, duration_seconds: candidate.duration_seconds, rank, planned });
+    counted.push({
+      id: null,
+      started_at: candidate.started_at,
+      duration_seconds: candidate.duration_seconds,
+      rank,
+      hasCalories: mine.hasCalories,
+      planned,
+    });
   }
 
   return { toInsert, excludeIds, alreadySynced };
